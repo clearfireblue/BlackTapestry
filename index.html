@@ -900,7 +900,6 @@ function renderOps(){
   else if(O.board.length)h+=plannerHTML();
   else h+='<section class="pane"><h2>Cycle '+O.cycle+' complete</h2><p>All reports are filed. Squads who sat out recover by one mission.</p><div class="acts"><button class="main" id="nextBtn">Start cycle '+(O.cycle+1)+'</button></div></section>';
   h+='<div class="opside"><section class="pane"><h2>Ship’s hold</h2><p class="muted" style="margin:0 0 6px;font-size:15px">Gear found on missions. Fit it to squads and mechs in the Armory.</p><div class="acts" style="margin:0 0 8px"><button data-s2="armory">Open the Armory</button></div>'
-    +'<p style="margin:0 0 6px">'+Object.keys(CONS).map(k=>'<span class="tag">'+esc(CONS[k][0])+' ×'+(O.cons[k]||0)+'</span>').join(' ')+'</p>'
     +(O.hold.length?'<ul class="hold">'+O.hold.map(x=>'<li>'+esc(itemName(x))+'</li>').join('')+'</ul>':'<p class="muted">Empty.</p>')+'</section>'
     +'<section class="pane"><h2>Mission reports</h2>'+(O.reports.length?O.reports.map(r=>'<details class="rep"><summary><b>'+esc(r.name)+'</b> <span class="'+(r.won?'ok':'hot')+'">'+(r.won?'Success +'+r.renown:'Failed')+'</span><small> · cycle '+r.cycle+' · '+esc(r.planet)+'</small></summary><p class="muted" style="margin:4px 0">'+esc(r.team.join(', '))+'</p><ul>'+r.lines.map(l=>'<li>'+esc(l)+'</li>').join('')+'</ul></details>').join(''):'<p class="muted">No missions yet.</p>')+'</section>'
     +'<details class="pane how"><summary>How operations work</summary><ul>'
