@@ -287,6 +287,20 @@ button.linkb{background:none;border:0;padding:0;min-height:auto;color:var(--acce
 .tbar i.tmp{border-color:var(--gold);background:var(--gold)}
 @media (max-width:1060px){.agrid{grid-template-columns:240px minmax(0,1fr)}.agrid>section:last-child{grid-column:1/-1}}
 @media (max-width:760px){.agrid{grid-template-columns:minmax(0,1fr)}ul.alist{grid-template-columns:repeat(auto-fill,minmax(160px,1fr))}}
+/* compact loadout */
+.space{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:var(--field);border:1px solid var(--line);border-radius:3px;margin:6px 0 6px}
+.sc{display:flex;flex-direction:column;align-items:center;text-align:center;padding:6px 4px;border-left:1px solid var(--line);min-width:0}
+.sc:first-child{border-left:0}
+.sc .sl{font:700 13px var(--f-mono);letter-spacing:.1em;color:var(--gold)}
+.sc b{font:700 26px/1.05 var(--f-display);font-variant-numeric:tabular-nums}
+.sc small{font-size:11px;line-height:1.25;color:var(--muted)}
+.aslots{grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:6px}
+.aslot{padding:6px 9px}.aslot.empty{display:flex;justify-content:space-between;align-items:center;padding:6px 9px}
+.aslot .ah{display:flex;justify-content:space-between;align-items:center;gap:6px}
+.aslot .ah .acts{margin:0;gap:4px}.aslot .ah .acts button{min-height:28px;padding:0 8px;font-size:12px}
+.aslot p{font-size:13px;line-height:1.3;margin:1px 0 0}
+.aslot b{font-size:15px}
+@media (max-width:520px){.sc b{font-size:22px}.sc small{font-size:10px}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 
@@ -1094,7 +1108,7 @@ function gearDesc(I){
   if(I.pen.arm)out.push('−'+I.pen.arm+' armor.');if(I.pen.acc)out.push('−'+I.pen.acc+' Accuracy.');
   if(I.orbTw)out.push(I.orbTw+': '+(I.purified?ORB_TW_P:ORB_TW)[I.orbTw]);
   if(I.draw)out.push(I.draw+(I.purified?' (purified): no drawback.':': '+DRAW[I.draw][0]));
-  I.bene.forEach(b=>out.push(b+': '+BENE[b][0]));
+  I.bene.forEach(b=>out.push((b==='+2 Potency'||b==='+2 Frequency')?BENE[b][0]:b+': '+BENE[b][0]));
   return out.join(' ');
 }
 const cursedOf=I=>!!(I&&!I.purified&&(I.draw||I.orbTw));
@@ -1488,20 +1502,22 @@ const SLOT_LABEL={weapon:'Weapon',weapon2:'Off-hand weapon',armor:'Armor',artifa
 function armTarget(){let t=arm.t;if(t&&t.k==='sq'&&!sq(t.id))t=null;if(t&&t.k==='mech'&&!(H.mechs||[]).some(x=>x.id===t.id))t=null;
   if(!t)t={k:'sq',id:sq(sel)?sel:(H.squads[0]||{}).id};arm.t=t;return t}
 function chipsFor(I){if(!I)return '';let c='';if(I.unique)c+='<span class="tw">unique</span>';if(I.orbTw)c+='<span class="tw'+(I.purified?'':' bad')+'">'+esc(I.orbTw)+(I.purified?' · purified':'')+'</span>';
-  if(I.draw)c+='<span class="tw'+(I.purified?'':' bad')+'">'+esc(I.draw)+(I.purified?' · purified':'')+'</span>';I.bene.forEach(b=>c+='<span class="tw good">'+esc(b)+'</span>');return c}
+  if(I.draw)c+='<span class="tw'+(I.purified?'':' bad')+'">'+esc(I.draw)+(I.purified?' · purified':'')+'</span>';I.bene.forEach(b=>{if(b!=='+2 Potency'&&b!=='+2 Frequency')c+='<span class="tw good">'+esc(b)+'</span>'});return c}
 function statLine(s){const K=kit(s);return 'Acc '+(s.st.Accuracy+K.acc)+' · Arm '+K.arm+' · '+maxT(s)+' troopers'}
 function readoutHTML(s){
-  const K=kit(s),row=(l,b,e,note)=>'<div class="rd"><span>'+l+'</span><b>'+e+'</b><small>'+(b!==e?'base '+b+(note?' · '+note:''):note||'')+'</small></div>';
-  let h='<div class="rdg">'+row('Accuracy',s.st.Accuracy,s.st.Accuracy+K.acc,'vs a d4 enemy')+row('Armor','0',K.arm,'off each miss')+row('Troopers',s.st.Stature,maxT(s),'')
-    +row('Cybernetics',s.st.Cybernetics,K.cybE,'orbital strength')+row('Proficiency',s.st.Proficiency,K.profE,'')+'</div>';
-  if(K.orbs.length)h+='<p class="rch">'+K.orbs.map(o=>'<span><b>'+esc(o.I.name)+'</b> recharges in '+rechargeOf(s,o,null,K)+' round'+(rechargeOf(s,o,null,K)===1?'':'s')+'</span>').join('')+'</p>';
-  if(K.ignArm)h+='<p class="rch"><span>Ignores <b>'+K.ignArm+'</b> enemy armor on every hit</span></p>';
+  const K=kit(s),cell=(L,n,e,b)=>'<div class="sc"><span class="sl">'+L+'</span><b>'+e+'</b><small>'+n+(b!==e?' · base '+b:'')+'</small></div>';
+  let h='<div class="space" role="group" aria-label="S.P.A.C.E. stats">'+cell('S','Stature',maxT(s),s.st.Stature)+cell('P','Proficiency',K.profE,s.st.Proficiency)+cell('A','Accuracy',s.st.Accuracy+K.acc,s.st.Accuracy)+cell('C','Cybernetics',K.cybE,s.st.Cybernetics)+cell('E','Endurance',s.st.Endurance,s.st.Endurance)+'</div>';
+  const bits=['Armor <b>'+K.arm+'</b> off each miss'];
+  if(K.ignArm)bits.push('ignores <b>'+K.ignArm+'</b> enemy armor');
+  K.orbs.forEach(o=>{const r=rechargeOf(s,o,null,K);bits.push('<b>'+esc(o.I.name)+'</b> recharges in '+r+' round'+(r===1?'':'s'))});
+  h+='<p class="rch">'+bits.map(x=>'<span>'+x+'</span>').join('')+'</p>';
   if(K.warn.length)h+='<ul class="warn">'+K.warn.map(w=>'<li>'+w+'</li>').join('')+'</ul>';
   return h}
 function slotCard(key,str,lock,owner){
   const slot=SLOT_OF[key]||(key==='a'||key==='b'?'weapon':'armor'),I=parseGear(slot,str),label=owner==='mech'?{a:'Mount A',b:'Mount B',armor:'Mech armor'}[key]:SLOT_LABEL[key];
-  return '<div class="aslot'+(str?'':' empty')+'"><span class="al">'+label+'</span>'+(str?'<b>'+esc(I?I.name:str)+(I&&I.v!=null&&(slot==='weapon'||slot==='armor')&&!(I.base&&I.base.fx.noArmor)?' <span class="av">'+I.v+'</span>':'')+'</b>'+chipsFor(I)+'<p>'+esc(owner==='mech'&&slot==='weapon'?'Rank '+(I&&I.v||0)+'. On a mech it counts double: +'+2*(I&&I.v||0)+' to hit before the signature bonus, and hits deal double the roll.':gearDesc(I))+'</p>'
-    +'<div class="acts">'+(lock?'':'<button data-unequip="'+key+'">To the hold</button>')+(!lock&&cursedOf(I)?'<button data-purslot="'+key+'"'+(H.ops.renown<2?' disabled':'')+'>Purify · 2 renown</button>':'')+'</div>':'<p class="muted">Empty. Fit something from the hold.</p>')+'</div>'}
+  if(!str)return '<div class="aslot empty"><span class="al">'+label+'</span><span class="muted">Empty</span></div>';
+  const btns=(lock?'':'<button data-unequip="'+key+'">To the hold</button>')+(!lock&&cursedOf(I)?'<button data-purslot="'+key+'"'+(H.ops.renown<2?' disabled':'')+'>Purify · 2</button>':'');
+  return '<div class="aslot"><div class="ah"><span class="al">'+label+'</span><div class="acts">'+btns+'</div></div><b>'+esc(I?I.name:str)+(I&&I.v!=null&&(slot==='weapon'||slot==='armor')&&!(I.base&&I.base.fx.noArmor)?' <span class="av">'+I.v+'</span>':'')+'</b>'+chipsFor(I)+'<p>'+esc(owner==='mech'&&slot==='weapon'?'Rank '+(I&&I.v||0)+'. Counts double: +'+2*(I&&I.v||0)+' to hit, hits deal double the roll.':gearDesc(I))+'</p></div>'}
 function fitButtons(it,t){
   if(t.k==='mech'){if(it.slot==='weapon')return '<button data-fit="'+it.id+'" data-key="a">Mount A</button><button data-fit="'+it.id+'" data-key="b">Mount B</button>';if(it.slot==='armor')return '<button data-fit="'+it.id+'" data-key="armor">Fit to mech</button>';return ''}
   if(it.slot==='schematic')return '';const s=sq(t.id);if(!s)return '';const K=kit(s),two={weapon:K.dual?'weapon2':null,artifact:K.art2?'artifact2':null,orbital:K.orb2?'orbital2':null}[it.slot];
@@ -1533,9 +1549,9 @@ function renderFitOut(){
   }else h+='<p class="muted">No squads left aboard.</p>';
   h+='</section>';
   /* hold */
-  const kinds=['all','weapon','armor','artifact','orbital','specialty','schematic'],items=O.hold.filter(x=>arm.f==='all'||x.slot===arm.f);
+  const kinds=['all','weapon','armor','artifact','orbital','specialty','schematic'],items=O.hold.filter(x=>arm.f==='all'||x.slot===arm.f).map(x=>{const I=x.slot==='schematic'?null:parseGear(x.slot,x.g);return {x,o:['weapon','armor','artifact','orbital','specialty','schematic'].indexOf(x.slot),v:itemValue(x),n:I?I.name:'Mech Schematics'}}).sort((p,q)=>p.o-q.o||q.v-p.v||p.n.localeCompare(q.n)).map(p=>p.x);
   h+='<section class="pane"><h2>Ship’s hold</h2><div class="chips" style="margin-bottom:8px">'+kinds.map(k=>{const n=k==='all'?O.hold.length:O.hold.filter(x=>x.slot===k).length;return '<button data-hf="'+k+'" aria-pressed="'+(arm.f===k)+'">'+(k==='all'?'All':k==='schematic'?'Schematics':SLOT_LABEL[k])+' '+n+'</button>'}).join('')+'</div>'
-    +'<p style="margin:0 0 8px">'+Object.keys(CONS).map(k=>'<span class="tag" title="'+esc(CONS[k][1])+'">'+esc(CONS[k][0])+' ×'+(O.cons[k]||0)+'</span>').join(' ')+'</p>';
+    ;
   const lockT=t.k==='sq'?onMission(t.id):(()=>{const mk=H.mechs.find(x=>x.id===t.id);return mk&&mk.pilot!=null&&onMission(mk.pilot)})();
   h+=items.length?'<ul class="holdl">'+items.map(it=>{const I=it.slot==='schematic'?null:parseGear(it.slot,it.g),sv=sellValue(it);
     return '<li><div class="hi"><span class="tag">'+(SLOT_LABEL[it.slot]||it.slot)+'</span> <b>'+esc(I?I.name:'Mech Schematics')+(I&&I.v!=null&&(it.slot==='weapon'||it.slot==='armor')&&!(I.base&&I.base.fx.noArmor)?' <span class="av">'+I.v+'</span>':'')+'</b>'+chipsFor(I)
