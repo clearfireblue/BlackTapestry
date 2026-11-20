@@ -171,8 +171,8 @@ figure.cam figcaption{font:500 12px/1.3 var(--f-body);color:var(--muted);text-al
 .rolled .hit{color:var(--accent);font-weight:600}.rolled .miss{color:var(--blood);font-weight:600}
 .health{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
 .hp{display:flex;flex-wrap:wrap;gap:4px}
-.hp i{width:18px;height:18px;border:1px solid var(--blood);border-radius:50%}
-.hp i.on{background:var(--blood)}
+.hp i{width:18px;height:18px;border:1px solid var(--accent);border-radius:50%}
+.hp i.on{background:var(--accent)}
 .hp i.armor{border-style:dashed}
 .slots{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
 .slot{display:flex;flex-direction:column;gap:3px;background:var(--field);border:1px solid var(--line);border-radius:3px;padding:8px 10px;min-width:0}
@@ -473,13 +473,13 @@ const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;'
 const $=id=>document.getElementById(id);
 
 /* ---------- rules ---------- */
-/* Black Tapestry's five stats doing Avelon's jobs: Accuracy fights, Stature takes wounds, Endurance survives,
+/* Black Tapestry's five stats doing Avelon's jobs: Accuracy fights, Stature commands crew, Endurance survives,
    Proficiency talks, Cybernetics does the hard skills */
 const STATS=['Stature','Proficiency','Accuracy','Cybernetics','Endurance'];
 const STAT_HELP={
-  Stature:'Health. Stature plus armor is how many wounds a crew member can take before they go down. Roll it to stand firm or haul heavy cargo.',
+  Stature:'Crew. Stature is how many crew members report directly to this character. When the character would take a hit, one of their crew members dies instead; with none left, the character goes down. Lost crew members are replaced, one each season.',
   Accuracy:'Combat. Roll a d10 at or under Accuracy plus your weapon to win a firefight, hold a corridor or land a shot.',
-  Endurance:'Survival. Roll a d10 at or under Endurance to endure hardship, shake off toxins, or live through a wound that should have killed.',
+  Endurance:'Survival. Roll a d10 at or under Endurance to endure hardship, shake off toxins, or live through a blow that should have killed. Armor and toughening gear add to every Endurance roll.',
   Proficiency:'Social skills. Roll a d10 at or under Proficiency to persuade, deceive, bargain or read what someone truly wants.',
   Cybernetics:'Hard skills. Roll a d10 at or under Cybernetics to fix the ship, fly it, slip past security, hack a system or call in ship support.'
 };
@@ -504,7 +504,8 @@ const A_TIERS=[['Deflector Pin','Electroshock Muscle Therapy','Anti-Ballistic Ve
 const WEAPONS=[['None',0]],ARMORS=[['None',0]]; /* filled from the tiers in the market section */
 const wVal=n=>(WEAPONS.find(w=>w[0]===n)||WEAPONS[0])[1];
 const aVal=n=>(ARMORS.find(w=>w[0]===n)||ARMORS[0])[1];
-const maxWounds=m=>Math.max(1,m.st.Stature+aVal(m.gear.armor)+['heirloom','specialty'].reduce((a,k)=>a+(((k==='heirloom'?HEIRLOOMS:SPECIALTIES)[m.gear[k]]||{}).wounds||0),0));
+/* hands come from Stature alone; armor and toughening gear add to Endurance instead (see gearBonus) */
+const maxWounds=m=>Math.max(1,m.st.Stature+(m.tempCrew||0)+(m.gear?((HEIRLOOMS[m.gear.heirloom]||{}).stature||0)+((SPECIALTIES[m.gear.specialty]||{}).stature||0):0));
 const STAT_TOTAL=25;
 const PHASE=4;
 
@@ -1251,7 +1252,7 @@ function houseView(){
   if(!mem(sel)){const ru=H.members.find(m=>m.ruler&&!m.dead)||H.members.find(m=>!m.returned);if(ru)sel=ru.id}
   const byGroup={};H.members.forEach(m=>{(byGroup[groupOf(m)]=byGroup[groupOf(m)]||[]).push(m)});
   const list=GROUPS.filter(g=>byGroup[g]).map(g=>{const fk='g-'+g.toLowerCase().replace(/\W+/g,'-');return `<li class="grp"><details data-fold="${fk}" ${foldOpen(fk)?'open':''}><summary class="ghead">${g} <span class="gn">${byGroup[g].length}</span></summary><ul class="roster">`+byGroup[g].sort((a,b)=>b.age-a.age).map(m=>{
-    const hp0=heirOf();const hurt=(hp0&&hp0.id===m.id&&!m.dead&&m.id!==H.firstMate?' · next in command':'')+(m.givenTo?` · with the ${esc(m.givenTo)}`:m.retired||m.returned?` · retired`:m.dead?` · <span class="hot">fallen</span>`:m.captive?` · <span class="hot">prisoner</span>`:m.onOp===H.cycle?` · away`:m.wounds>0?` · <span class="hot">${m.wounds} wound${m.wounds>1?'s':''}</span>`:'');
+    const hp0=heirOf();const hurt=(hp0&&hp0.id===m.id&&!m.dead&&m.id!==H.firstMate?' · next in command':'')+(m.givenTo?` · with the ${esc(m.givenTo)}`:m.retired||m.returned?` · retired`:m.dead?` · <span class="hot">fallen</span>`:m.captive?` · <span class="hot">prisoner</span>`:m.onOp===H.cycle?` · away`:m.wounds>0?` · <span class="hot">${m.wounds} crew member${m.wounds>1?'s':''} lost</span>`:'');
     return `<li><button data-sel="${m.id}" ${m.id===sel?'aria-current="true"':''}>${portrait(m,48)}<span style="min-width:0"><span class="rn">${esc(m.given)}</span><span class="rj">${spOf(m).name} · ${esc(m.title||'—')} · ${m.age}${hurt}</span></span></button></li>`}).join('')+'</ul></details></li>'}).join('');
   return `${seasonPane()}<div class="grid"><section class="pane"><h2>Crew</h2><ul class="roster">${list}</ul></section><section class="pane d">${dossier(mem(sel))}</section></div>`;
 }
@@ -1272,9 +1273,9 @@ function dossier(m){
   else if(m.retired||m.returned)pills.push(`<span class="status kin">${esc(m.fell||'Retired ashore')}</span>`);
   else if(m.dead)pills.push(`<span class="status bad">Fallen${m.fell?' · '+esc(m.fell):''}</span>`);
   else if(m.captive)pills.push(`<span class="status bad">Held prisoner by the ${esc(m.captive.house)}</span>`);
-  else if(m.wounds>=mw)pills.push('<span class="status bad">Gravely wounded</span>');
-  else if(m.wounds>0)pills.push(`<span class="status bad">Wounded · ${left} left</span>`);
-  else pills.push('<span class="status ok">Hale</span>');
+  else if(m.wounds>=mw)pills.push('<span class="status bad">No crew left · down</span>');
+  else if(m.wounds>0)pills.push(`<span class="status bad">Understaffed · ${left} of ${mw} crew members</span>`);
+  else pills.push(`<span class="status ok">Full crew · ${mw} crew members</span>`);
   pills.push(`<span class="status kin">${spOf(m).name}</span>`);
   if(!m.dead&&m.ruler)pills.push('<span class="status young">Captain</span>');
   else if(!m.dead&&m.id===H.firstMate)pills.push('<span class="status young">First Mate · takes command if the captain falls</span>');
@@ -1292,12 +1293,12 @@ function dossier(m){
   const stats=STATS.map(k=>{
     const v=m.st[k],bonus=(k==='Accuracy'?wVal(m.gear.weapon):0)+gearBonus(m,k);
     return `<span class="sn">${k}${k===spOf(m).primary?' ✦':''}</span><span class="pips" aria-label="${k} ${v} of 10">${Array.from({length:10},(_,i)=>`<i class="${i<v?'on':''}"></i>`).join('')}</span><span class="sv">${v}</span>
-      <p class="help">${STAT_HELP[k]}</p>${trainRow(m,k)}`}).join('');
+      <p class="help">${STAT_HELP[k]}${k==='Endurance'&&bonus?` <b>Gear: ${bonus>0?'+':'−'}${Math.abs(bonus)} to Endurance rolls.</b>`:''}</p>${trainRow(m,k)}`}).join('');
   let roll='';
   if(lastRoll&&lastRoll.id===m.id){const L=lastRoll;
     roll=`<p class="rolled ${L.ok?'hit':'miss'}" role="status">${esc(L.skill)} (${L.stat} ${L.base}${L.bonus?' + '+L.bonus+' gear':''}): rolled <b>${L.roll}</b> against ${L.target}. <span class="${L.ok?'hit':'miss'}">${L.ok?(L.roll===1?'A perfect success.':'Success by '+(L.target-L.roll)+'.'):(L.roll===10?'Disaster.':'Failure by '+(L.roll-L.target)+'.')}</span></p>`}
   else roll='<p class="rolled" role="status">Pick a skill to roll a d10. At or under the number succeeds.</p>';
-  const hp=Array.from({length:mw},(_,i)=>`<i class="${i<m.wounds?'on':''} ${i>=m.st.Stature?'armor':''}" title="${i>=m.st.Stature?'From armor or gear':'From Stature'}"></i>`).join('');
+  const hp=Array.from({length:mw},(_,i)=>`<i class="${i<mw-m.wounds?'on':''} ${i>=m.st.Stature?'armor':''}" title="${i<mw-m.wounds?'Reporting':'Lost'} · ${i>=m.st.Stature?'from armor or gear':'from Stature'}"></i>`).join('');
   return `<div class="dhead">
       <div class="figs"><figure class="cam">${portrait(m,144)}<figcaption>${spOf(m).name} · ${m.sex==='m'?'He':'She'} · age ${m.age}</figcaption></figure><figure class="cam"><img class="pf" src="${bodyURL(m)}" width="144" height="144" alt=""><figcaption>${m.dead?'Off the roster':'Ready for a job'}</figcaption></figure>
         ${m.dead?'':`<button class="sm" data-relook="${m.id}">Redraw look</button>`}</div>
@@ -1309,10 +1310,10 @@ function dossier(m){
       </div></div>
     <h3>The five stats</h3><p class="muted" style="margin:0 0 8px;font-size:17px">${esc(speciesLine(m))}</p>
     <div class="stats">${stats}</div>
-    <h3>Health</h3>
-    <div class="health"><span class="hp" aria-label="${m.wounds} of ${mw} wounds taken">${hp}</span>
-      <span class="muted">${m.wounds} of ${mw} wounds · Stature ${m.st.Stature}${aVal(m.gear.armor)?' + armor '+aVal(m.gear.armor):''}${(fxH(m).wounds||0)+(fxS(m).wounds||0)?' '+((fxH(m).wounds||0)+(fxS(m).wounds||0)>0?'+':'−')+' gear '+Math.abs((fxH(m).wounds||0)+(fxS(m).wounds||0)):''}</span>
-      <span style="display:flex;gap:6px"><button data-wound="1" ${m.wounds>=mw?'disabled':''}>Take a wound</button><button data-wound="-1" ${m.wounds<=0?'disabled':''}>Heal one</button></span></div>
+    <h3>Crew members</h3>
+    <div class="health"><span class="hp" aria-label="${mw-m.wounds} of ${mw} crew members reporting">${hp}</span>
+      <span class="muted">${mw-m.wounds} of ${mw} crew members reporting · from Stature ${m.st.Stature}${maxWounds(m)>m.st.Stature?' + gear '+(maxWounds(m)-m.st.Stature):''}</span>
+      <span style="display:flex;gap:6px"><button data-wound="1" ${m.wounds>=mw?'disabled':''}>Lose a crew member</button><button data-wound="-1" ${m.wounds<=0?'disabled':''}>Replace a crew member</button></span></div>
     <h3>Gear</h3>
     <div class="slots">
       ${GEAR_SLOTS.map(k=>`<div class="slot"><label for="g${k}-${m.id}">${ITEM_SLOTS[k]}</label><select id="g${k}-${m.id}" data-gear="${k}" ${m.dead?'disabled':''}>${gearOptions(m,k)}</select><small>${m.gear[k]&&m.gear[k]!=='None'?esc(itemDesc(k,m.gear[k])):'Buy more at the Market.'}</small></div>`).join('')}
@@ -1326,7 +1327,7 @@ const DEPTS=[['Accuracy','Gunnery'],['Stature','Deck'],['Endurance','Medical & b
 /* a crew member's department: where the player put them, or else what they do best */
 const deptOf=m=>m.dept&&DEPTS.some(d=>d[0]===m.dept)?m.dept:topStat(m.st);
 function chainCard(m,role,drag){
-  const st=m.captive?' · <span class="hot">captured</span>':m.onOp===H.cycle?' · away':m.wounds>0?` · <span class="hot">${m.wounds} wound${m.wounds>1?'s':''}</span>`:'';
+  const st=m.captive?' · <span class="hot">captured</span>':m.onOp===H.cycle?' · away':m.wounds>0?` · <span class="hot">${m.wounds} crew member${m.wounds>1?'s':''} lost</span>`:'';
   return `<button class="ccard" data-sel="${m.id}" data-go="house" ${drag?`draggable="true" data-drag="${m.id}" title="Drag to another department"`:''} ${m.id===sel?'aria-current="true"':''}>${portrait(m,48)}<span style="min-width:0"><span class="rn">${esc(m.given)}</span><span class="rj">${esc(role||m.title||'—')} · ${spOf(m).name} · ${m.age}${st}</span></span></button>`;
 }
 function chainView(){
@@ -1350,8 +1351,8 @@ function chainView(){
 }
 function laterView(k){
   const T={
-    ops:['Operations','Phase 2',['One operation each season, tied to the home system’s orbit: Trade at Perihelion, Salvage on the Ascent, Bounty at Aphelion, Dogfight on the Descent.','Trade rolls Proficiency to win contracts and backers. Salvage rolls Cybernetics to strip derelicts. Bounty rolls Accuracy to hunt a mark. Dogfight rolls Accuracy, then Cybernetics, to capture a ship.','Ship support called in with Cybernetics, and consumables spent from the hold on a single roll.','Pay in credits. Wounds, captures and deaths come back with the crew.']],
-    realm:['The Sector','Phase 3',['Rival crews at gang scale: pirate crews, smuggling syndicates, merc outfits and station security.','Venues instead of holds: bars, berths, chop shops and other establishments that pay each season and can fall into unrest.','Relations, feuds and alliances, truces, trade, and power rankings among the crews.']],
+    ops:['Operations','Phase 2',['One operation each season, tied to the home system’s orbit: Trade at Perihelion, Salvage on the Ascent, Bounty at Aphelion, Dogfight on the Descent.','Trade rolls Proficiency to win contracts and backers. Salvage rolls Cybernetics to strip derelicts. Bounty rolls Accuracy to hunt a mark. Dogfight rolls Accuracy, then Cybernetics, to capture a ship.','Ship support called in with Cybernetics, and consumables spent from the hold on a single roll.','Pay in credits. Lost crew members, captures and deaths come back with the crew.']],
+    realm:['The Sector','Phase 3',['Rival crews at gang scale: pirate crews, smuggling syndicates, merc outfits and station security.','Venues instead of holds: bars, berths, chop shops and other establishments that pay each season and can be damaged.','Relations, feuds and alliances, truces, trade, and power rankings among the crews.']],
     tree:['Chain of Command','Phase 4',['The captain, the First Mate, and the crew by department.']],
     blood:['Crew Ties','Phase 4',['Friends and Rivals among the crew, earned on operations.','Recruitment offers from rival fleets every Aphelion, and transfers out.','The First Mate takes command when the captain falls or retires.']]
   }[k];
@@ -1364,7 +1365,7 @@ function seasonPane(){
   const log=H.log.length?`<details class="hist"><summary>Ship’s log</summary><ul class="log">${H.log.slice(-8).reverse().map(l=>`<li><span class="cy">${seasonOf(l.cycle)}, yr ${yearOf(l.cycle)}</span>${esc(l.text)}</li>`).join('')}</ul></details>`:'';
   return `<section class="pane seasonbar"><div class="cyclebar">
       <div style="min-width:0"><span class="eyebrow">${sea}, year ${yearOf(H.cycle)} · the season of ${type}</span><p style="margin:4px 0 0">${SEASON_WHY[sea]}</p>
-        <p class="muted" style="margin:2px 0 0;font-size:15px">Run this season’s ${type} operation in <button class="linkish" data-sec="ops">Operations</button>. Ending the season pays your ships and contracts, lands one step of training per crew member, heals one wound each and restocks the Market.</p></div>
+        <p class="muted" style="margin:2px 0 0;font-size:15px">Run this season’s ${type} operation in <button class="linkish" data-sec="ops">Operations</button>. Ending the season pays your ships and contracts, lands one step of training per crew member, replaces one lost crew member for each character and restocks the Market.</p></div>
       <button class="main" id="endCycle" ${H.ops.underway.some(x=>!x.done)?'disabled':''}>End the season</button></div>
       <ol class="seasons" aria-label="The year">${SEASONS.map(x=>`<li class="${x===sea?'now':''}"><b>${x}</b> ${SEASON_OP[x]}</li>`).join('')}</ol>${news}${log}</section>`;
 }
@@ -1419,6 +1420,17 @@ function genRivals(){
   return kinds.map(k=>newRival(k,taken));
 }
 const rival=n=>H.rivals.find(r=>r.name===n);
+/* a rival fleet's ships, by class, kept in step with its ship count; hands are what those ships carry, plus the flagship (a frigate's worth) */
+const RIVAL_SHIP_POOL=[['Transport','Shuttle','Shuttle','Cutter'],['Shuttle','Cutter','Freighter','Freighter'],['Cutter','Freighter','Frigate','Frigate']];
+function rivalShips(r){
+  if(!Array.isArray(r.ships))r.ships=[];
+  const pool=RIVAL_SHIP_POOL[clamp((r.power||1)-1,0,2)],n=Math.max(0,r.lands||0);
+  while(r.ships.length<n)r.ships.push(pick(pool));
+  while(r.ships.length>n)r.ships.splice(Math.floor(Math.random()*r.ships.length),1);
+  return r.ships;
+}
+const FLAGSHIP_HANDS=80;
+const rivalHands=r=>FLAGSHIP_HANDS+rivalShips(r).reduce((a,t)=>a+((LADDER.find(x=>x[0]===t)||[0,0,14])[2]),0);
 /* ---------- sigil picker: edits apply instantly; the rule of tincture is enforced against the field ---------- */
 let sigilEdit=null; /* {kind:'mine'|'rival'|'royal', name} */
 const TINCT_NAME={or:'Gold (Or)',argent:'Silver (Argent)',gules:'Red (Gules)',azure:'Blue (Azure)',vert:'Green (Vert)',sable:'Black (Sable)',purpure:'Purple (Purpure)'};
@@ -1546,6 +1558,8 @@ function ensureState(){
 /* items moved between the artifact and specialty slots */
 function migrateItems(){
   if(!Array.isArray(H.armory))H.armory=[];
+  H.armory=H.armory.filter(x=>!(x.slot==='consumable'&&x.name==='Auroch Milk'));
+  H.members.forEach(m=>{if(m.tempCrew&&!(H.ops&&H.ops.underway||[]).some(x=>!x.done&&x.team.includes(m.id))){m.wounds=Math.max(0,m.wounds-m.tempCrew);m.tempCrew=0}});
 }
 /* ---------- peaceful operations: regattas, pit fights, beast hunts, pirate-held derelicts and drifting hulls ---------- */
 const PEACE={
@@ -1579,21 +1593,44 @@ function genPeaceOp(type,obj){
 const SIEGE_STAGES=['Hold the airlocks','Break their rush','Drive them back to the docking ring','Disable their ship'];
 function genSiege(r,L){
   const diff=clamp(r.power,1,3);
-  return {id:H.ops.nextOp++,type:'Bounty',kind:'defend',siege:true,diff,target:r.name,peaceful:true,place:L.name,landName:L.name,created:H.cycle,
+  return {id:H.ops.nextOp++,type:'Bounty',kind:'defend',siege:true,diff,target:r.name,peaceful:true,place:L.name,landName:lk(L),created:H.cycle,
     title:`Hold ${L.name} against the ${r.name}`,stages:SIEGE_STAGES.slice(0,diff+1).map(s=>({name:s,stat:'Accuracy'})),gold:2*diff};
 }
-/* ---------- unrest among a ship's hands: 0 steady, 1 restless, 2 unrest, 3 mutiny ---------- */
-const UNREST=['Steady','Restless','Unrest','Mutiny'];
+/* ---------- ship damage (kept in the old 'unrest' field): 0 humming, 1 battered, 2 damaged, 3 crippled; each level costs 1 credit of income, and a crippled ship pays nothing ---------- */
+const UNREST=['Humming','Battered','Damaged','Crippled'];
 const DANGER=['','Low','Middling','High'];
 const UNREST_CHANCE=.15;
+/* maintenance crews: hired onto a ship, they keep her humming. A crewed ship needs repairs a third as often. Each crew is paid every season; unpaid crews walk off, smallest ships first */
+const MAINT_COST=10,MAINT_UPKEEP=2;
+const maintN=()=>H.lands.filter(l=>l.maint).length;
+const maintUpkeep=()=>maintN()*MAINT_UPKEEP;
+const damageChance=L=>L.maint?UNREST_CHANCE/3:UNREST_CHANCE;
+function hireMaint(L){if(!L||L.maint||H.gold<MAINT_COST)return;H.gold-=MAINT_COST;L.maint=1;H.log.push({cycle:H.cycle,text:`Hired a maintenance crew for ${L.name} for ${MAINT_COST} credits.`})}
+function dismissMaint(L){if(!L||!L.maint)return;L.maint=0;H.log.push({cycle:H.cycle,text:`The maintenance crew of ${L.name} is paid off and leaves.`})}
+const maintQueue=()=>H.lands.filter(l=>!l.maint).sort((a,b)=>tierStep(b)-tierStep(a)||b.income-a.income);
+function hireMaintAll(){maintQueue().forEach(L=>{if(H.gold>=MAINT_COST)hireMaint(L)})}
+function maintTurn(say){
+  const n=maintN();if(!n)return;const due=maintUpkeep();
+  if(H.gold>=due){H.gold-=due;say(`Your ${n} maintenance crew${n>1?'s are':' is'} paid ${due} credits.`,'');return}
+  const paid=Math.floor(H.gold/MAINT_UPKEEP);H.gold-=paid*MAINT_UPKEEP;
+  const crewed=H.lands.filter(l=>l.maint).sort((a,b)=>tierStep(a)-tierStep(b)||a.income-b.income),gone=crewed.slice(0,n-paid);
+  gone.forEach(l=>l.maint=0);
+  say(`There aren’t credits enough to pay the maintenance crews. The crew${gone.length>1?'s':''} of ${gone.map(l=>l.name).join(', ')} walk${gone.length>1?'':'s'} off${paid?`; ${paid} stay${paid===1?'s':''} on`:''}.`,'bad');
+}
 const landIncome=l=>{const u=l.unrest||0;return u>=3?0:Math.max(0,l.income-u)};
-function migrateLands(){H.lands.forEach(l=>{if(l.unrest==null)l.unrest=0})}
+/* every ship in your fleet gets a unique id, so two ships with the same name never get mixed up */
+function lk(L){if(!L)return null;if(!L.sid){H.shipSeq=(H.shipSeq||0)+1;L.sid='s'+H.shipSeq}return L.sid}
+function migrateLands(){
+  H.lands.forEach(l=>{if(l.unrest==null)l.unrest=0;lk(l)});
+  /* operations saved before ship ids pointed at ships by name: point them at the first ship of that name */
+  (H.ops&&H.ops.defense||[]).concat((H.ops&&H.ops.underway||[]).map(x=>x.op)).forEach(d=>{if(d&&d.landName&&!/^s\d+$/.test(d.landName)){const L=H.lands.find(l=>l.name===d.landName);if(L)d.landName=lk(L)}});
+}
 function genDefense(L){
   const lvl=clamp(L.unrest||1,1,3),diff=lvl;
-  return {id:H.ops.nextOp++,type:'Bounty',kind:'defend',diff,target:null,peaceful:true,place:L.name,landName:L.name,created:H.cycle,unrest:lvl,
+  return {id:H.ops.nextOp++,type:'Bounty',kind:'defend',diff,target:null,peaceful:true,place:L.name,landName:lk(L),created:H.cycle,unrest:lvl,
     title:`${DANGER[lvl]}-danger boarding party on ${L.name}`,stages:PEACE_STAGES.defend.slice(0,diff+1).map(s=>({name:s,stat:'Accuracy'})),gold:2*diff};
 }
-/* ---------- refits: a ship climbs the class ladder; only while her hands are steady ---------- */
+/* ---------- refits: a ship climbs the class ladder; only while she is humming ---------- */
 const LADDER=[['Transport',1,10,0],['Shuttle',2,14,1],['Cutter',3,18,2],['Freighter',5,40,3],['Frigate',8,80,6],['Cruiser',10,120,8]]; /* class, income, hands, seasons to refit */
 const TIER_STEP=Object.fromEntries(LADDER.map((x,i)=>[x[0],i]));
 const ladderOf=L=>LADDER;
@@ -1614,41 +1651,39 @@ function buildTurn(say){
     say(`The refit is done: ${L.name} is now a ${to[0].toLowerCase()} (+${to[1]-from[1]} credits a season, +${to[2]-from[2]} ${whoAt(L)}).`,'good')});
 }
 function refundBuild(L,say){if(L&&L.build){H.gold+=L.build.cost;say(`The unfinished refit of ${L.name} is abandoned. ${L.build.cost} credits are recovered.`,'warn');delete L.build}}
-/* ---------- trouble aboard: a free action that returns a ship's restless hands to steady ---------- */
-const ROUT_STAGES=['Find who is stirring up the hands','Throw the agitators in the brig','Make an example of the ringleader','Put loyal hands on watch'];
+/* ---------- repairs: a free action that brings a damaged ship back to humming, rolled on Cybernetics ---------- */
+const ROUT_STAGES=['Survey the damage','Patch the hull breaches','Rewire the power grid','Realign the drive'];
 const isRaid=d=>!d.rout;
-const raidOn=L=>(H.ops.defense||[]).some(d=>isRaid(d)&&d.landName===L.name);
-const routOn=L=>(H.ops.defense||[]).find(d=>d.rout&&d.landName===L.name);
+const raidOn=L=>(H.ops.defense||[]).some(d=>isRaid(d)&&d.landName===lk(L));
+const routOn=L=>(H.ops.defense||[]).find(d=>d.rout&&d.landName===lk(L));
 const canRout=L=>(L.unrest||0)>0&&!raidOn(L)&&!routOn(L)&&L.routed!==H.cycle;
 function planRout(L){
   if(!L||!canRout(L))return;const lvl=clamp(L.unrest,1,3);
-  H.ops.defense.push({id:H.ops.nextOp++,type:'Bounty',kind:'rout',rout:true,diff:lvl,target:null,peaceful:true,place:L.name,landName:L.name,created:H.cycle,unrest:lvl,
-    title:`Put down the grumbling aboard ${L.name}`,stages:ROUT_STAGES.slice(0,lvl+1).map(s=>({name:s,stat:'Accuracy'})),gold:0});
+  H.ops.defense.push({id:H.ops.nextOp++,type:'Bounty',kind:'rout',rout:true,diff:lvl,target:null,peaceful:true,place:L.name,landName:lk(L),created:H.cycle,unrest:lvl,
+    title:`Repair ${L.name}`,stages:ROUT_STAGES.slice(0,lvl+1).map(s=>({name:s,stat:'Cybernetics'})),gold:0});
 }
-function callOffRout(L){H.ops.defense=H.ops.defense.filter(d=>!(d.rout&&d.landName===L.name))}
+function callOffRout(L){H.ops.defense=H.ops.defense.filter(d=>!(d.rout&&d.landName===lk(L)))}
 function loseHold(L,say){
   const i=H.lands.indexOf(L);if(i<0)return;H.lands.splice(i,1);refundBuild(L,say);
-  const r=!L.wild&&rival(L.from);
-  if(r){r.lands++;say(`The hands of ${L.name} mutiny and sail her back to the ${r.name}.`,'bad')}
-  else say(`The hands of ${L.name} mutiny and run off under the black flag.`,'bad');
+  say(`${L.name} is too badly broken to save. She is scrapped.`,'bad');
 }
 function raidLost(L,say){
   if((L.unrest||0)>=3)loseHold(L,say);
-  else{L.unrest=(L.unrest||0)+1;say(`The boarders get a foothold aboard ${L.name}. Her hands fall into ${UNREST[L.unrest].toLowerCase()}.`,'bad')}
+  else{L.unrest=(L.unrest||0)+1;say(`The boarders tear through ${L.name} before they are done. She is now ${UNREST[L.unrest].toLowerCase()}.`,'bad')}
 }
 function peaceRewardText(op){
-  if(op.kind==='rout')return `Her hands settle down to steady. Fail, and nothing changes; you may try again next season`;
-  if(op.kind==='defend')return op.siege?`Keep ${op.place}, and on a complete success take one of theirs prisoner. Fail, and the ${op.target} take the ship`:`Drive off the boarders and take ${op.gold} credits of their gear; her hands ${op.unrest>=3?'calm to restless':'are steady again'}. Fail, and ${op.unrest>=3?'the ship is lost':'they fall deeper into unrest'}`;
+  if(op.kind==='rout')return `She is repaired and humming again. Fail, and the damage stays; you may try again next season`;
+  if(op.kind==='defend')return op.siege?`Keep ${op.place}, and on a complete success take one of theirs prisoner. Fail, and the ${op.target} take the ship`:`Drive off the boarders and take ${op.gold} credits of their gear. Fail, and ${op.unrest>=3?'the crippled ship is scrapped':'they damage her further'}`;
   if(op.type==='Bounty')return `${op.gold} credits and +1 Rep. A complete success also wins ${op.prize.name}`;
   return `${op.land.name}, a ${op.land.tier.toLowerCase()}: ${op.land.income} credits each season, ${op.land.peasants} hands`;
 }
 function finishPeace(ms,grade,out){
   const op=ms.op;
-  if(op.kind==='rout'){const L=H.lands.find(l=>l.name===op.landName);
-    if(grade==='fail'||!L){out.push(`The agitators aboard ${op.place} keep their heads down. Nothing changes.`);return}
-    L.unrest=0;out.push(`The agitators are in the brig. The hands of ${L.name} are steady.`);return}
+  if(op.kind==='rout'){const L=H.lands.find(l=>lk(l)===op.landName);
+    if(grade==='fail'||!L){out.push(`The repairs on ${op.place} don’t hold. She is still ${UNREST[L?L.unrest:1].toLowerCase()}.`);return}
+    L.unrest=0;out.push(`${L.name} is repaired and humming again.`);return}
   if(op.kind==='defend'){
-    const i=H.lands.findIndex(l=>l.name===op.landName);
+    const i=H.lands.findIndex(l=>lk(l)===op.landName);
     if(op.siege){const r=rival(op.target);
       warTally(op.target,grade);
       if(grade==='fail'){if(i>=0){const L=H.lands.splice(i,1)[0];refundBuild(L,t=>out.push(t));if(r)r.lands++;out.push(`The ${op.target} take ${L.name}.`)}}
@@ -1656,7 +1691,7 @@ function finishPeace(ms,grade,out){
       return;}
     const L=i>=0?H.lands[i]:null,said=t=>out.push(t);
     if(grade==='fail'){if(L)raidLost(L,said)}
-    else{const g=grade==='full'?op.gold:Math.ceil(op.gold/2);H.gold+=g;if(L)L.unrest=(op.unrest||L.unrest)>=3?1:0;out.push(`The boarders are driven off ${op.place}. +${g} credits of their gear. Her hands are now ${UNREST[L?L.unrest:0].toLowerCase()}.`)}
+    else{const g=grade==='full'?op.gold:Math.ceil(op.gold/2);H.gold+=g;out.push(`The boarders are driven off ${op.place}. +${g} credits of their gear.`)}
     return;
   }
   if(grade==='fail'){out.push('Nothing gained.');return}
@@ -1667,7 +1702,7 @@ function finishPeace(ms,grade,out){
     return;
   }
   const L=Object.assign({},op.land,{from:op.kind==='wild'?'open space':'pirates',wild:true,cycle:H.cycle});
-  if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('Taken, but restless: half her hands jumped ship.')}
+  if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('Taken, but battered: half her hands were lost in the fight.')}
   H.lands.push(L);out.unshift(`${L.name} claimed as a ${L.tier.toLowerCase()}: +${L.income} credits each season, ${L.peasants} hands. No rival fleet is angered.`);
 }
 /* between seasons: unanswered boardings cost the ship; trouble may stir aboard others (Phase 3) */
@@ -1675,16 +1710,16 @@ function banditTurn(say){
   migrateLands();
   H.ops.defense=(H.ops.defense||[]).filter(op=>!op.rout);
   const old=H.ops.defense.filter(op=>op.created!==H.cycle);
-  old.forEach(op=>{const L=H.lands.find(l=>l.name===op.landName);if(!L)return;
+  old.forEach(op=>{const L=H.lands.find(l=>lk(l)===op.landName);if(!L)return;
     if(op.siege){warTally(op.target,'fail');H.lands.splice(H.lands.indexOf(L),1);refundBuild(L,say);const r=rival(op.target);if(r)r.lands++;say(`No one went to hold ${L.name}, and the ${op.target} take it.`,'bad')}
     else{say(`No one went to fight off the boarders on ${L.name}.`,'bad');raidLost(L,say)}});
   H.ops.defense=(H.ops.defense||[]).filter(op=>op.created===H.cycle);
   buildTurn(say);
   H.lands.filter(l=>!raidOn(l)).forEach(L=>{
-    if(Math.random()>=UNREST_CHANCE)return;
+    if(Math.random()>=damageChance(L))return;
     const u=L.unrest||0;
-    if(u===0){L.unrest=1;say(`Grumbling among the hands aboard ${L.name}. They are restless.`,'warn');return}
-    if(u<3&&Math.random()<.5){L.unrest=u+1;say(`The hands of ${L.name} slide into ${UNREST[L.unrest].toLowerCase()}.`,'warn');return}
+    if(u===0){L.unrest=1;say(`Wear and tear: ${L.name} is battered and needs repairs.`,'warn');return}
+    if(u<3&&Math.random()<.5){L.unrest=u+1;say(`Without repairs, ${L.name} breaks down further. She is now ${UNREST[L.unrest].toLowerCase()}.`,'warn');return}
     H.ops.defense.push(genDefense(L));say(`A ${DANGER[u].toLowerCase()}-danger boarding party hits ${L.name}. Answer it this season.`,'warn');
   });
 }
@@ -1715,22 +1750,57 @@ function stageTarget(ms,m){
   const nx=(ms.next||[]).find(x=>nextFits(x,op,st.stat)),next=nx?nx.n:0;
   return {base,wb,assist,plans,off:0,gb,ally,lean,boost,next,pen:op.diff-1,t:base+wb+assist+plans+gb+ally+lean+boost+next-(op.diff-1),stat:st.stat};
 }
-function hurt(m,n){
+function hurt(m,n,onOp){
+  let saved='';
+  if(hasBoon(m,'bioseason')&&m.bioUsed!==H.cycle&&n>0){m.bioUsed=H.cycle;n--;saved='keeps one crew member alive thanks to the Biofoam Repository and '}
+  if(n<=0)return saved+'loses no one';
+  const had=Math.max(0,maxWounds(m)-m.wounds);
   m.wounds+=n;
-  if(m.wounds<maxWounds(m))return `takes ${n} wound${n>1?'s':''}`;
-  m.wounds=maxWounds(m);const surv=()=>{const g=1+Math.floor(Math.random()*10);return [g,g===1||(g!==10&&g<=m.st.Endurance+(fxS(m).fallGrit||0)+gearBonus(m,'Endurance'))]};
+  /* Biofoam Aerosol: when a hit would leave someone with no crew, the ship sprays the team; 3 lost crew members return, one at a time to whoever has fewest left */
+  if(onOp&&onOp.team&&m.wounds>=maxWounds(m)){
+    for(const b of bearers(onOp,['heal'])){const R0=supportRoll(onOp,b);if(!R0.ok){R0.say('no answer from the ship.');continue}
+      m.wounds=Math.min(m.wounds,maxWounds(m));const got={};
+      for(let i=0;i<3;i++){const pool=teamAlive(onOp).concat(onOp.team.map(mem).includes(m)?[]:[m]).filter((x,j,a)=>x&&x.wounds>0&&a.indexOf(x)===j);if(!pool.length)break;
+        const w=pool.sort((a,c)=>(maxWounds(a)-a.wounds)-(maxWounds(c)-c.wounds))[0];w.wounds--;got[w.given]=(got[w.given]||0)+1}
+      R0.say(`a biofoam cloud sweeps the team: ${Object.entries(got).map(([k,v])=>`${k} +${v}`).join(', ')||'no one needed it'}.`);
+      if(m.wounds<maxWounds(m))return `${saved}loses ${Math.min(n,had)} crew member${Math.min(n,had)>1?'s':''}, but Biofoam Aerosol puts ${got[m.given]||0} back on duty before they go down`;
+      break}
+  }
+  if(onOp&&m.wounds>=maxWounds(m)){const c=['Biofoam Stimulant'].find(x=>holdCount(x));
+    if(c&&spendCons(c)){const h=Math.min(CONS_FX[c].n,maxWounds(m));m.wounds=maxWounds(m)-h;return `${saved}loses ${Math.min(n,had)} crew member${Math.min(n,had)>1?'s':''}, but ${c} from the hold puts ${h} back on duty before they go down`}}
+  if(m.wounds<maxWounds(m))return `${saved}loses ${n} crew member${n>1?'s':''}`;
+  m.wounds=maxWounds(m);
+  if(onOp&&m.gear.support==='Disposable Interposition Drones'){m.gear.support='';return `${saved}loses the last of their crew and goes down, but the Interposition Drones throw themselves in the way and are destroyed. ${m.given} passes Endurance automatically`}
+  const surv=()=>{const g=1+Math.floor(Math.random()*10);return [g,g===1||(g!==10&&g<=m.st.Endurance+(fxS(m).fallGrit||0)+gearBonus(m,'Endurance'))]};
   let [g,ok]=surv(),pre='';
   if(!ok){const li=H.armory.findIndex(x=>x.slot==='consumable'&&x.name==='Luck');if(li>=0){H.armory.splice(li,1);const g0=g;[g,ok]=surv();pre=`, spends the crew’s Luck (first rolled ${g0}),`}}
-  if(ok)return `goes down, gravely wounded${pre} and survives on Endurance (rolled ${g})`;
-  if(hasBoon(m,'martyr')){m.gear.heirloom='';return `goes down and should not get up (rolled ${g}), but the Temporal Blinkstone flares and ${m.given} lives on, gravely wounded`}
+  if(ok)return `${saved}loses the last of their crew and goes down${pre}, but survives on Endurance (rolled ${g})`;
+  if(hasBoon(m,'unbreakable'))return `${saved}loses the last of their crew and should not get up (rolled ${g}), but ${m.given} is Unbreakable and lives on`;
+  if(hasBoon(m,'martyr')){m.gear.heirloom='';return `goes down and should not get up (rolled ${g}), but the Temporal Blinkstone flares and ${m.given} lives on, with no crew left`}
   m.dead=true;m.fell=`Fell in ${seasonOf(H.cycle)}, year ${yearOf(H.cycle)}`;return `goes down and does not get up${pre}. Endurance failed (rolled ${g})`;
 }
-/* a wound taken during an operation: a shield effect turns it aside first */
+/* a hit taken during an operation costs crew members: a shield effect saves the first */
 function woundIn(ms,m,n){
   let pre='';
-  if(ms.ward>0){ms.ward--;n--;pre='Cover turns aside the first hit; '}
-  else if(hasBoon(m,'shield')){ms.shielded=ms.shielded||[];if(!ms.shielded.includes(m.id)){ms.shielded.push(m.id);n--;pre='Backup takes the first hit; '}}
-  return n>0?pre+m.given+' '+hurt(m,n):pre+m.given+' is unhurt';
+  /* Inflatable Reinforcements go first: a decoy takes the hit, saving one crew member (unless cover already will) */
+  if(n>0&&!(ms.ward>0)){for(const b of bearers(ms,['decoy'])){const R0=supportRoll(ms,b);if(R0.ok){R0.say(`an inflatable decoy takes the hit meant for ${m.given}.`);n--;pre=`Inflatable Reinforcements save a crew member; `;break}R0.say('no answer from the ship.')}}
+  if(n>0&&!(ms.ward>0)){const b=bearers(ms,['shield'])[0];if(b)autoCall(ms,b)}
+  if(ms.ward>0){ms.ward--;n--;pre='Cover saves the first crew member; '}
+  else if(hasBoon(m,'shield')){ms.shielded=ms.shielded||[];if(!ms.shielded.includes(m.id)){ms.shielded.push(m.id);n--;pre='Backup saves the first crew member; '}}
+  if(n>0){const w=['Instant Cement Grenade','Pactable Inflatables'].find(x=>holdCount(x));if(w&&spendCons(w)){n--;pre+=`${w} from the hold saves a crew member; `}}
+  if(n<=0)return pre+m.given+' loses no one';
+  const w0=m.wounds,d0=m.dead,f0=m.fell,txt=pre+m.given+' '+hurt(m,n,ms);
+  if(m.wounds>w0||(m.dead&&!d0))ms.lastHit={id:m.id,lost:m.wounds-w0,died:m.dead&&!d0,fell:f0};
+  return txt;
+}
+/* ---------- consumables are spent automatically from the hold, only when they change the outcome ---------- */
+const holdCount=n=>H.armory.filter(x=>x.slot==='consumable'&&x.name===n).length;
+function spendCons(n){const i=H.armory.findIndex(x=>x.slot==='consumable'&&x.name===n);if(i<0)return false;H.armory.splice(i,1);return true}
+/* the smallest roll boost in the hold that turns this failure into a success */
+function rescueBoost(op,stat,need){
+  const opts=Object.keys(CONS_FX).filter(n=>{const f=CONS_FX[n];return f.k==='next'&&f.n>=need&&(!f.stat||f.stat===stat)&&(!f.op||f.op===op.type)&&holdCount(n)})
+    .sort((a,b)=>CONS_FX[a].n-CONS_FX[b].n||CONSUMABLES[a].price-CONSUMABLES[b].price);
+  return opts.length&&spendCons(opts[0])?opts[0]:null;
 }
 function rollStage(msId,memId){
   const ms=H.ops.underway.find(x=>x.id===msId),m=mem(memId);if(!ms||!m||ms.done)return;
@@ -1738,7 +1808,12 @@ function rollStage(msId,memId){
   if(T.next){const i=ms.next.findIndex(x=>nextFits(x,op,st.stat));ms.next.splice(i,1)}
   let ok=roll===1||(roll!==10&&roll<=T.t),note='',pre='';
   if(!ok&&ms.rerolls>0){ms.rerolls--;const r0=roll;roll=1+Math.floor(Math.random()*10);ok=roll===1||(roll!==10&&roll<=T.t);pre=`Blinktech burns (first rolled ${r0}). `}
+  if(!ok&&hasBoon(m,'relic')&&m.relicYear!==yearOf(H.cycle)){m.relicYear=yearOf(H.cycle);const r0=roll;roll=1+Math.floor(Math.random()*10);ok=roll===1||(roll!==10&&roll<=T.t);pre+=`Relic Bearer rerolls, once this year (first rolled ${r0}). `}
   if(!ok&&hasBoon(m,'marble')){ms.marbled=ms.marbled||[];if(!ms.marbled.includes(m.id)){ms.marbled.push(m.id);const r0=roll;roll=1+Math.floor(Math.random()*10);ok=roll===1||(roll!==10&&roll<=T.t);pre+=`${fxH(m).boon==='marble'?m.gear.heirloom:m.gear.specialty} gives a second chance (first rolled ${r0}). `}}
+  const tryBoost=()=>{if(ok||roll===10)return;const c=rescueBoost(op,st.stat,roll-T.t);if(c){ok=true;pre+=`${c} from the hold turns a ${roll} into a success (+${CONS_FX[c].n}). `}};
+  tryBoost();
+  if(!ok&&spendCons('Burnable Blinktech')){const r0=roll;roll=1+Math.floor(Math.random()*10);ok=roll===1||(roll!==10&&roll<=T.t);pre+=`Burnable Blinktech from the hold: a reroll (first rolled ${r0}). `;tryBoost()}
+  if(!ok){const g=supportRescue(ms,m,st,roll,T.t);if(g!=null){ok=true;roll=g}}
   if(!ok){
     const r=rival(op.target);
     if(st.stat==='Accuracy'){const wn=op.peaceful&&!op.siege?(op.kind==='tourney'||op.kind==='melee'?1:Math.max(1,op.diff-1+(roll===10?1:0)-Math.floor(aVal(m.gear.armor)/2))):Math.max(1,op.diff+(roll===10?1:0)-Math.floor(aVal(m.gear.armor)/2));note=woundIn(ms,m,wn)+'.'}
@@ -1758,6 +1833,12 @@ function rollStage(msId,memId){
   note=pre+note;
   ms.results.push({stage:st.name,stat:st.stat,who:m.given,roll,t:T.t,ok,note});
   ms.stage++;
+  /* Emergency Skyhook: pulled out when the last one standing is down to their last crew member */
+  {const lf=activeTeam(ms);if(ms.stage<op.stages.length&&lf.length===1&&maxWounds(lf[0])-lf[0].wounds<=1){const b=bearers(ms,['escape'])[0];if(b){autoCall(ms,b);if(ms.done){render();return}}}}
+  const left=activeTeam(ms);
+  if(ms.stage<op.stages.length&&left.length===1&&maxWounds(left[0])-left[0].wounds<=1&&spendCons('Emergency Skyhook')){
+    (ms.calls=ms.calls||[]).push(`${left[0].given} is down to one crew member: the Emergency Skyhook from the hold pulls the team out.`);
+    endEarly(ms,'Pulled out by skyhook.');render();return}
   if(ms.stage<op.stages.length&&!activeTeam(ms).length){
     while(ms.stage<op.stages.length){ms.results.push({stage:op.stages[ms.stage].name,stat:op.stages[ms.stage].stat,who:'—',roll:0,t:0,ok:false,note:'No one is left to carry on.'});ms.stage++}
   }
@@ -1767,17 +1848,18 @@ function rollStage(msId,memId){
 /* ---------- ship support and consumables, during an operation ---------- */
 const CONS_FX={
   'Frag Grenade':{k:'next',n:2,stat:'Accuracy'},'Disposable Anti-Tank':{k:'next',n:3,stat:'Accuracy'},'Incendiary Grenade':{k:'next',n:2,stat:'Accuracy'},
-  'Instant Cement Grenade':{k:'ward'},'Tear Gas Grenade':{k:'next',n:2,op:'Bounty'},'Alcohol':{k:'next',n:2,stat:'Proficiency'},'Auroch Milk':{k:'heal',n:1},
+  'Instant Cement Grenade':{k:'ward'},'Tear Gas Grenade':{k:'next',n:2,op:'Bounty'},'Alcohol':{k:'next',n:2,stat:'Proficiency'},
   'Aggro Stimulant':{k:'next',n:3,stat:'Accuracy'},'Biofoam Stimulant':{k:'heal',n:2},'Cogni Stimulant':{k:'next',n:2,stat:'Cybernetics'},
   'Deployable Target Drones':{k:'next',n:2,op:'Dogfight'},'Pactable Inflatables':{k:'ward'},'Pactable Animatronics':{k:'next',n:2,op:'Dogfight'},
   'Virtual Combat Assistant':{k:'next',n:2,stat:'Accuracy'},'Burnable Blinktech':{k:'reroll'},'Pre-Loaded Uplink':{k:'autosup'},'Orbital Calibrator':{k:'supnext',n:2},
   'DEET':{k:'next',n:3,op:'Salvage'},'Emergency Skyhook':{k:'escape'},'Luck':{k:'luck'}
 };
-const SUP_STAT={'Orbital Napalm Bombardment':'Accuracy','Orbital Laser':'Accuracy','Orbital Drop Helldivers':'Accuracy'};
+const SUP_STAT={'Orbital Napalm Bombardment':'Accuracy','Orbital Laser':'Accuracy','Orbital Drop Helldivers':'Accuracy','Low-Orbit UAV':'Accuracy'};
 const supportOf=m=>m.gear.support||fxH(m).grant||'';
 const supportUses=m=>hasBoon(m,'support2')?2:1;
 const supportLeft=(ms,m)=>supportOf(m)?supportUses(m)-((ms.sup||{})[m.id]||0):0;
-const supportUseful=(ms,m)=>{const n=supportOf(m),S=SUPPORT[n]||{},st=SUP_STAT[n]||(n==='Orbital Precision Strike'?'Accuracy':null);if(S.fx==='heal')return activeTeam(ms).some(x=>x.wounds>0);return !st||remainingStats(ms).includes(st)||(n==='Orbital Precision Strike'&&ms.results.some(x=>!x.ok&&x.roll&&x.stat==='Accuracy'))};
+const teamAlive=ms=>ms.team.map(mem).filter(x=>x&&!x.dead&&!x.captive);
+const supportUseful=(ms,m)=>{const n=supportOf(m),S=SUPPORT[n]||{};if(S.fx==='decoy')return false;if(S.fx==='troops')return Math.floor(m.st.Cybernetics*S.frac)>0;const st=SUP_STAT[n]||(S.fx==='next'?S.stat:null)||(n==='Orbital Precision Strike'?'Accuracy':null);if(S.fx==='guard')return false;if(S.fx==='undo')return !!(ms.lastHit&&!ms.lastHit.undone);if(S.fx==='auto')return ms.stage<ms.op.stages.length;if(S.fx==='reroll')return ms.results.some(x=>!x.ok&&x.roll);if(S.fx==='restore')return teamAlive(ms).some(x=>x.wounds>0);if(S.fx==='heal')return activeTeam(ms).some(x=>x.wounds>0);return !st||remainingStats(ms).includes(st)||(n==='Orbital Precision Strike'&&ms.results.some(x=>!x.ok&&x.roll&&x.stat==='Accuracy'))};
 const supportTarget=(ms,m)=>m.st.Cybernetics+gearBonus(m,'Cybernetics')+(hasBoon(m,'supportBonus')?1:0)+(ms.supNext||0);
 const remainingStats=ms=>ms.op.stages.slice(ms.stage).map(s=>s.stat);
 function consUsable(ms,n){
@@ -1797,34 +1879,77 @@ function useConsumable(msId,name){
   const i=H.armory.findIndex(x=>x.slot==='consumable'&&x.name===name);if(i<0)return;H.armory.splice(i,1);
   const f=CONS_FX[name],say=t=>(ms.calls=ms.calls||[]).push(t);
   if(f.k==='next'){(ms.next=ms.next||[]).push({n:f.n,stat:f.stat||null,op:f.op||null});say(`${name}: +${f.n} to the next ${f.stat||'roll'}.`)}
-  else if(f.k==='ward'){ms.ward=(ms.ward||0)+1;say(`${name}: the next wound is turned aside.`)}
-  else if(f.k==='heal'){const m=activeTeam(ms).filter(x=>x.wounds>0).sort((a,b)=>b.wounds-a.wounds)[0];const h=Math.min(f.n,m.wounds);m.wounds-=h;say(`${name}: ${m.given} heals ${h} wound${h>1?'s':''}.`)}
+  else if(f.k==='ward'){ms.ward=(ms.ward||0)+1;say(`${name}: the next crew member lost is saved.`)}
+  else if(f.k==='heal'){const m=activeTeam(ms).filter(x=>x.wounds>0).sort((a,b)=>b.wounds-a.wounds)[0];const h=Math.min(f.n,m.wounds);m.wounds-=h;say(`${name}: ${m.given} replaces ${h} lost crew member${h>1?'s':''}.`)}
   else if(f.k==='reroll'){ms.rerolls=(ms.rerolls||0)+1;say(`${name}: the next failed roll is rolled again.`)}
   else if(f.k==='autosup'){ms.autoSup=true;say(`${name}: the next ship support call succeeds without a roll.`)}
   else if(f.k==='supnext'){ms.supNext=(ms.supNext||0)+f.n;say(`${name}: +${f.n} to the next ship support roll.`)}
   else if(f.k==='escape'){say(`${name}: the team is pulled out.`);endEarly(ms,'Pulled out by skyhook.')}
   render();
 }
+/* ---------- ship support is called in automatically, when it would help ---------- */
+let quietSupport=false;
+/* teammates still standing who carry a ship support of one of these kinds, with a call left */
+const bearers=(ms,fxs)=>activeTeam(ms).filter(m=>supportLeft(ms,m)>0&&fxs.includes((SUPPORT[supportOf(m)]||{}).fx));
+/* spend one of the bearer's calls and roll Cybernetics; a Calibrator or Uplink in the hold can save a miss */
+function supportRoll(ms,m){
+  const n=supportOf(m);ms.sup=ms.sup||{};ms.sup[m.id]=(ms.sup[m.id]||0)+1;
+  const t=supportTarget(ms,m),auto=!!ms.autoSup,roll=auto?0:1+Math.floor(Math.random()*10);let ok=auto||roll===1||(roll!==10&&roll<=t),fix='';
+  ms.autoSup=false;ms.supNext=0;
+  if(!ok&&roll!==10&&roll-t<=2&&spendCons('Orbital Calibrator')){ok=true;fix=' · saved by an Orbital Calibrator from the hold'}
+  if(!ok&&spendCons('Pre-Loaded Uplink')){ok=true;fix=' · saved by a Pre-Loaded Uplink from the hold'}
+  const head=`${m.given} calls in ${n}${auto?' (uplink, no roll)':` (rolled ${roll} vs ${t}${fix})`}: `,say=x=>(ms.calls=ms.calls||[]).push(head+x);
+  return {ok,say,roll};
+}
+function autoCall(ms,m){quietSupport=true;try{callSupport(ms.id,m.id)}finally{quietSupport=false}}
+/* at the start: support that boosts the whole operation, drops supplies, or shields the team */
+function supportAtStart(ms){bearers(ms,['bonus','drop','shield','troops']).forEach(m=>{if(!ms.done&&supportLeft(ms,m)>0&&supportUseful(ms,m))autoCall(ms,m)})}
+/* after a stage fails: support that can turn it into a success. Returns the new roll if saved */
+function supportRescue(ms,m0,st,roll,t){
+  for(const b of bearers(ms,['fix','auto','reroll','next'])){
+    const S=SUPPORT[supportOf(b)];
+    if(S.fx==='next'&&(roll===10||(S.stat&&S.stat!==st.stat)||roll-t>S.n))continue;
+    const R0=supportRoll(ms,b);if(!R0.ok){R0.say('no answer from the ship.');continue}
+    if(S.fx==='reroll'){const g=1+Math.floor(Math.random()*10),ok=g===1||(g!==10&&g<=t);
+      R0.say(`${m0.given} rerolls “${st.name}” (rolled ${g} vs ${t}): ${ok?'now a success':'still a failure'}.`);if(ok)return g;continue}
+    R0.say(`“${st.name}” is saved.`);return roll;
+  }
+  return null;
+}
 function callSupport(msId,memId){
   const ms=H.ops.underway.find(x=>x.id===msId),m=mem(memId);if(!ms||!m||ms.done||!canServe(m)||supportLeft(ms,m)<1)return;
   const n=supportOf(m),S=SUPPORT[n];if(!S)return;
-  ms.sup=ms.sup||{};ms.sup[m.id]=(ms.sup[m.id]||0)+1;
-  const t=supportTarget(ms,m),auto=!!ms.autoSup,roll=auto?0:1+Math.floor(Math.random()*10),ok=auto||roll===1||(roll!==10&&roll<=t);
-  ms.autoSup=false;ms.supNext=0;
-  const head=`${m.given} calls in ${n}${auto?' (uplink, no roll)':` (rolled ${roll} vs ${t})`}: `,say=x=>(ms.calls=ms.calls||[]).push(head+x);
-  if(!ok){say('no answer from the ship.');render();return}
-  if(S.fx==='fix'){const want=n==='Orbital Precision Strike'?'Accuracy':null;
+  const {ok,say,roll}=supportRoll(ms,m);
+  if(!ok){say('no answer from the ship.');if(!quietSupport)render();return}
+  if(S.fx==='undo'){const h=ms.lastHit,v=h&&!h.undone&&mem(h.id);
+    if(v){h.undone=true;v.wounds=Math.max(0,v.wounds-h.lost);if(h.died){v.dead=false;v.fell=h.fell}
+      say(`the last hit on ${v.given} was a well-crafted inflatable all along. ${h.lost?`${h.lost} crew member${h.lost>1?'s':''} ${h.lost>1?'are':'is'} back on duty`:'No one was lost'}${h.died?`, and ${v.given} is alive after all`:''}.`)}
+    else say('there was no hit to explain away.')}
+  else if(S.fx==='auto'){const st=ms.op.stages[ms.stage];if(st){ms.results.push({stage:st.name,stat:st.stat,who:m.given,roll:0,t:0,ok:true,note:`Taken by ${n}.`});ms.stage++;say(`the stage “${st.name}” succeeds.`);if(ms.stage>=ms.op.stages.length)finishOp(ms)}}
+  else if(S.fx==='next'){(ms.next=ms.next||[]).push({n:S.n,stat:S.stat||null,op:null});say(`+${S.n} to the next ${S.stat||''} roll.`)}
+  else if(S.fx==='reroll'){const r=ms.results.slice().reverse().find(x=>!x.ok&&x.roll);
+    if(r){const g=1+Math.floor(Math.random()*10),ok2=g===1||(g!==10&&g<=r.t);
+      if(ok2){r.ok=true;r.note=(r.note?r.note+' ':'')+`Rerolled under ${n}: ${g}.`;say(`${r.who} rerolls “${r.stage}” (rolled ${g} vs ${r.t}): now a success.`)}
+      else{r.note=(r.note?r.note+' ':'')+`Rerolled under ${n}, still failed (${g}).`;say(`${r.who} rerolls “${r.stage}” (rolled ${g} vs ${r.t}): still a failure.`)}}
+    else say('nothing has failed yet.')}
+  else if(S.fx==='troops'){const k=Math.floor(m.st.Cybernetics*S.frac);m.tempCrew=(m.tempCrew||0)+k;say(`${k} extra crew member${k>1?'s':''} join ${m.given} for this operation (${maxWounds(m)-m.wounds} of ${maxWounds(m)} now).`)}
+  else if(S.fx==='restore'){const pool=teamAlive(ms).filter(x=>x.wounds>0);
+    if(pool.length){const w=pool.sort((a,b)=>(maxWounds(a)-a.wounds)-(maxWounds(b)-b.wounds)||b.wounds-a.wounds)[0],before=w.wounds;
+      w.wounds=S.full?0:Math.max(0,w.wounds-Math.ceil(maxWounds(w)/2));const got=before-w.wounds;
+      say(`${w.given} replaces ${got} crew member${got>1?'s':''} (${maxWounds(w)-w.wounds} of ${maxWounds(w)} now).`)}
+    else say('no one on the team is short of crew.')}
+  else if(S.fx==='fix'){const want=n==='Orbital Precision Strike'?'Accuracy':null;
     const r=ms.results.slice().reverse().find(x=>!x.ok&&x.roll&&(!want||x.stat===want));
     if(r){r.ok=true;r.note=(r.note?r.note+' ':'')+`Saved by ${n}.`;say(`the failed stage “${r.stage}” becomes a success.`)}
     else{(ms.next=ms.next||[]).push({n:3,stat:want,op:null});say(`nothing has failed yet, so +3 to the next ${want||'roll'}.`)}}
   else if(S.fx==='bonus'){const st=SUP_STAT[n];ms.boost=ms.boost||{};if(st)ms.boost[st]=(ms.boost[st]||0)+S.n;else ms.boost.all=(ms.boost.all||0)+S.n;
     if(n==='Orbital Gatling Strike')(ms.next=ms.next||[]).push({n:1,stat:null,op:null});
     say(`+${S.n} to every ${st||''}${st?' ':''}roll left in the operation${n==='Orbital Gatling Strike'?', and +1 more to the next roll':''}.`)}
-  else if(S.fx==='shield'){ms.ward=(ms.ward||0)+1;if(n==='Holophase Reinforcements')(ms.next=ms.next||[]).push({n:1,stat:null,op:null});say('the next wound to anyone on the team will be turned aside.')}
-  else if(S.fx==='heal'){activeTeam(ms).forEach(x=>{if(x.wounds>0)x.wounds--});say('everyone on the team heals 1 wound.')}
+  else if(S.fx==='shield'){ms.ward=(ms.ward||0)+1;if(n==='Holophase Reinforcements')(ms.next=ms.next||[]).push({n:1,stat:null,op:null});say('the next crew member anyone on the team would lose is saved.')}
+  else if(S.fx==='heal'){activeTeam(ms).forEach(x=>{if(x.wounds>0)x.wounds--});say('everyone on the team replaces 1 lost crew member.')}
   else if(S.fx==='escape'){say('the team gets out.');endEarly(ms,'Pulled out by jump packs.')}
   else if(S.fx==='drop'){const k=n==='Orbital Payload'&&roll===1?2:1;for(let i=0;i<k;i++){const c=pick(Object.keys(CONS_FX).filter(x=>x!=='Luck'));H.armory.push({slot:'consumable',name:c});say(`${c} drops into the hold.`)}}
-  render();
+  if(!quietSupport)render();
 }
 function finishOp(ms){
   const op=ms.op,n=op.stages.length,s=ms.results.filter(r=>r.ok).length;
@@ -1847,7 +1972,7 @@ function finishOp(ms){
         if(grade==='full'){const a=pick(Object.keys(HEIRLOOMS).filter(x=>!HEIRLOOMS[x].unique));H.armory.push({slot:'heirloom',name:a});out.push(`Found ${a}, now in the hold`)}
         else for(let i=0;i<op.diff;i++){const c=pick(Object.keys(CONS_FX).filter(x=>x!=='Luck'));H.armory.push({slot:'consumable',name:c});out.push(`Found a ${c}`)}}
       if(op.kind==='reclaim'){const L=Object.assign({},op.land,{from:'the boneyard of the '+op.target,wild:true,cycle:H.cycle});
-        if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('She flies, barely: half the hands you hired walked off.')}
+        if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('She flies, barely: battered, and half the hands you hired walked off.')}
         H.lands.push(L);out.unshift(`${L.name} back in service as your ${L.tier.toLowerCase()}: +${L.income} credits each season, ${L.peasants} hands`)}
       if(op.kind==='secret'||op.kind==='both')secret();
       if(op.kind==='plans'||(op.kind==='both'&&grade==='full'))plans();
@@ -1863,7 +1988,7 @@ function finishOp(ms){
       break}
     case 'Dogfight':{
       const L=Object.assign({},op.land,{from:op.target,cycle:H.cycle});
-      if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('Taken, but restless: half her hands jumped ship.')}
+      if(grade==='partial'){L.unrest=1;L.peasants=Math.max(1,Math.round(L.peasants/2));out.push('Taken, but battered: half her hands were lost in the fight.')}
       H.lands.push(L);if(r)r.lands=Math.max(0,r.lands-1);out.unshift(`${L.name} captured as your ${L.tier.toLowerCase()}: +${L.income} credits each season, ${L.peasants} hands`);
       break}
   }
@@ -1889,18 +2014,18 @@ function opsView(){
       ${PHASE>=3&&H.dip&&H.dip.calls.length?`<p class="hot" style="margin:6px 0 0">${H.dip.calls.length===1?'An ally calls':'Allies call'} you to arms. Answer in The Sector before the season ends.</p>`:''}
     </section>
     ${under?`<section class="pane"><h2>Underway</h2><div class="opgrid">${under}</div></section>`:''}
-    ${H.ops.defense&&H.ops.defense.some(d=>d.rout)?`<section class="pane"><div class="boardhead"><h2>Trouble aboard</h2><span class="muted" style="font-size:15px">A free action: it does not use this season’s operation.</span></div><div class="opgrid">${H.ops.defense.filter(d=>d.rout).map(opCard).join('')}</div></section>`:''}
-    ${H.ops.defense&&H.ops.defense.some(isRaid)?`<section class="pane crisis"><div class="boardhead"><h2>Your ships under attack</h2><span class="muted" style="font-size:15px">Defending does not use this season’s operation. Leave it, and her hands fall deeper into unrest when the season ends.</span></div><div class="opgrid">${H.ops.defense.filter(isRaid).map(opCard).join('')}</div></section>`:''}
+    ${H.ops.defense&&H.ops.defense.some(d=>d.rout)?`<section class="pane" id="routing"><div class="boardhead"><h2>Repairs</h2><span class="muted" style="font-size:15px">A free action: it does not use this season’s operation.</span></div><div class="opgrid">${H.ops.defense.filter(d=>d.rout).map(opCard).join('')}</div></section>`:''}
+    ${H.ops.defense&&H.ops.defense.some(isRaid)?`<section class="pane crisis"><div class="boardhead"><h2>Your ships under attack</h2><span class="muted" style="font-size:15px">Defending does not use this season’s operation. Leave it, and the boarders damage her further when the season ends.</span></div><div class="opgrid">${H.ops.defense.filter(isRaid).map(opCard).join('')}</div></section>`:''}
     <section class="pane"><div class="boardhead"><h2>${type} this ${sea}</h2><span style="display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center"><span class="muted" style="font-size:15px">Choose one. The others are gone once you commit.</span>${H.ops.board.length?'<button class="sm" data-reroll="1" style="margin-top:0">Reroll operations</button>':''}</span></div>
       <div class="opgrid">${board}</div></section>
     <div class="two">${holdingsPane()}${rivalsPane()}</div>
     <details class="pane how"><summary><h2 style="display:inline;font-size:18px">How operations work</h2></summary><ul>
       <li>Choose an operation, then a team of crew of age. Each stage rolls one stat: a d10 at or under the target succeeds. A 1 always succeeds and a 10 always fails.</li>
       <li>Each teammate past the first adds +1 to every roll, up to +2. Danger takes 1 or 2 off every roll. Weapons add to Accuracy; gear adds where it says.</li>
-      <li>Fail an Accuracy stage and the roller takes wounds, less half their armor. A crew member who runs out of wounds rolls Endurance to survive.</li>
+      <li>Fail an Accuracy stage and the roller loses crew members, less half their armor. A character with no crew left goes down and rolls Endurance to survive.</li>
       <li>Every stage a success: complete success. At least half: partial success, with half the reward. Fewer: failure.</li>
-      <li><b>Ship support:</b> a crew member with a ship support item calls it in once per operation (twice with Orbital Almanac, Orbital Overclock or Orbital PHD Thesis), rolling Cybernetics.</li>
-      <li><b>Consumables:</b> spend one from the hold at any point; it is used up whether or not the roll it boosts succeeds.</li></ul></details>
+      <li><b>Ship support</b> is called in automatically, once per operation per bearer (twice with Orbital Almanac, Orbital Overclock or Orbital PHD Thesis), rolling Cybernetics: boosts and resupply at the start, rescues right after a failed stage, crew savers on a hit, Biofoam Aerosol when a hit would leave someone with no crew, and jump packs when the last one standing is.</li>
+      <li><b>Consumables</b> are spent from the hold automatically, only when they change the outcome: the smallest roll boost that turns a failed roll into a success, a Blinktech reroll if no boost can, a Cement Grenade or Inflatables on any hit, a Biofoam Stimulant before someone would be left with no crew, a Calibrator or Uplink to save a failed ship support call, and a Skyhook when the last one standing is down to one crew member.</li></ul></details>
     ${H.log.length?`<section class="pane"><h2>Ship’s log</h2><ul class="chron">${H.log.slice(-12).reverse().map(l=>`<li><span class="cy">${seasonOf(l.cycle)}, yr ${yearOf(l.cycle)}</span> ${esc(l.text)}</li>`).join('')}</ul></section>`:''}`;
 }
 function miniSigil(name){const r=rival(name);return r?`<i class="kdot" style="background:${KIND_COLOR[r.kind]||'var(--muted)'}" title="${esc(kindOf(r).label)}"></i>`:''}
@@ -1935,11 +2060,11 @@ function missionCard(ms){
     body=`<p style="margin:0"><b>Stage ${ms.stage+1} of ${op.stages.length}:</b> ${esc(st.name)} <span class="muted">· rolls ${st.stat}</span></p>
       <div class="teampick">${act.slice().sort((a,b)=>stageTarget(ms,b).t-stageTarget(ms,a).t).map(m=>{const T=stageTarget(ms,m);const parts=[T.stat+' '+T.base];if(T.wb)parts.push('weapon +'+T.wb);if(T.assist)parts.push('team +'+T.assist);if(T.plans)parts.push('schedules +2');if(T.gb)parts.push('gear '+(T.gb>0?'+':'−')+Math.abs(T.gb));if(T.ally)parts.push('allies +'+T.ally);if(T.boost)parts.push('support +'+T.boost);if(T.next)parts.push('item +'+T.next);if(T.pen)parts.push('danger −'+T.pen);
         return `<button data-stageroll="${ms.id}|${m.id}">${portrait(m,48)}<span>${esc(m.given)} rolls <span class="muted">· ${parts.join(', ')}</span></span><b>${T.t} or under</b></button>`}).join('')}</div>`;
-    const sup=act.filter(m=>supportLeft(ms,m)>0&&supportUseful(ms,m));
-    if(sup.length)body+=`<div class="acts">${sup.map(m=>`<button class="sm" data-support="${ms.id}|${m.id}" title="${esc(SUPPORT[supportOf(m)].d)}">${esc(m.given)}: call ${esc(supportOf(m))} · ${ms.autoSup?'sure':supportTarget(ms,m)+' or under'}</button>`).join('')}</div>`;
-    const cons=[...new Set(H.armory.filter(x=>x.slot==='consumable').map(x=>x.name))].filter(n=>consUsable(ms,n));
-    if(cons.length)body+=`<div class="give"><select id="cons-${ms.id}" aria-label="Consumable to use">${cons.map(n=>`<option value="${esc(n)}">${esc(n)} ×${H.armory.filter(x=>x.slot==='consumable'&&x.name===n).length} · ${esc(CONSUMABLES[n].d)}</option>`).join('')}</select><button class="sm" data-usecons="${ms.id}">Use from the hold</button></div>`;
-    const B=ms.boost||{},pend=[B.all?`support +${B.all} to every roll`:'',B.Accuracy?`support +${B.Accuracy} to Accuracy rolls`:'',ms.ward?`${ms.ward} wound${ms.ward>1?'s':''} will be turned aside`:'',ms.rerolls?'a reroll ready':'',(ms.next||[]).length?(ms.next.length+' item bonus'+(ms.next.length>1?'es':'')+' waiting'):''].filter(Boolean);
+    const sup=act.filter(m=>supportLeft(ms,m)>0&&(SUPPORT[supportOf(m)]||{}).fx!=='guard');
+    if(sup.length)body+=`<p class="muted" style="margin:0;font-size:14px">Ship support, called in automatically when it would help: ${sup.map(m=>`${esc(m.given)} (${esc(supportOf(m))}, ${supportLeft(ms,m)} call${supportLeft(ms,m)>1?'s':''} left, ${supportTarget(ms,m)} or under)`).join(' · ')}.</p>`;
+    const nc=H.armory.filter(x=>x.slot==='consumable').length;
+    if(nc)body+=`<p class="muted" style="margin:0;font-size:14px">${nc} consumable${nc>1?'s':''} in the hold, spent automatically when one would change the outcome.</p>`;
+    const B=ms.boost||{},pend=[B.all?`support +${B.all} to every roll`:'',B.Accuracy?`support +${B.Accuracy} to Accuracy rolls`:'',ms.ward?`${ms.ward} crew member${ms.ward>1?'s':''} will be saved`:'',ms.rerolls?'a reroll ready':'',(ms.next||[]).length?(ms.next.length+' item bonus'+(ms.next.length>1?'es':'')+' waiting'):''].filter(Boolean);
     if(pend.length)body+=`<p class="muted" style="margin:0;font-size:14px">In effect: ${pend.join(' · ')}.</p>`;
   }else{
     const G={full:'Complete success',partial:'Partial success',fail:'Failure'}[ms.grade];
@@ -1953,22 +2078,44 @@ function missionCard(ms){
 }
 function routRow(l,i){
   if(!(l.unrest||0))return '';
-  if(routOn(l))return `<br><span class="muted">Crackdown planned above.</span> <button class="sm" data-calloff="${i}">Call it off</button>`;
-  if(l.routed===H.cycle)return '<br><span class="muted">Already tried to settle her hands this season.</span>';
-  if(raidOn(l))return '';
-  return `<br><button class="sm" data-rout="${i}">Put down the grumbling · ${DANGER[clamp(l.unrest,1,3)].toLowerCase()} danger</button>`;
+  if(routOn(l))return '<br><span class="muted">Repairs planned on the Operations board.</span>';
+  if(l.routed===H.cycle)return '<br><span class="muted">Already tried to repair her this season.</span>';
+  return '';
+}
+/* one button repairs the fleet ship by ship: worst damage first, then the biggest ship; each finished repair brings up the next */
+const routQueue=()=>H.lands.filter(canRout).sort((a,b)=>(b.unrest||0)-(a.unrest||0)||tierStep(b)-tierStep(a)||b.income-a.income);
+const routPlanned=()=>(H.ops.defense||[]).find(d=>d.rout);
+const routUnderway=()=>H.ops.underway.some(x=>!x.done&&x.op.kind==='rout');
+const routChainOn=()=>H.ops.routChain===H.cycle;
+function nextRout(){if(routPlanned()||routUnderway())return;const L=routQueue()[0];if(L)planRout(L);else H.ops.routChain=null}
+function routAllRow(){
+  const q=routQueue(),p=routPlanned(),u=routUnderway();
+  if(p)return `<p style="margin:0 0 8px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center"><span><b>Repairing the fleet:</b> ${esc(p.place)} · ${DANGER[p.diff].toLowerCase()} danger <span class="muted">· on the Operations board${q.length?`, then ${q.length} more`:''}</span></span><button class="sm" data-routstop="1" style="margin:0">Call it off</button></p>`;
+  if(u&&routChainOn())return `<p class="muted" style="margin:0 0 8px">Repairing the fleet: finish the repair underway, and the next ship comes up${q.length?` (${q.length} left)`:''}.</p>`;
+  if(!q.length)return '';
+  const L=q[0];
+  return `<p style="margin:0 0 8px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center"><button class="sm" data-routall="1" style="margin:0">Repair the fleet · ${q.length} ship${q.length>1?'s':''}</button><span class="muted" style="font-size:14px">Free action. Starts with the ${esc(L.tier.toLowerCase())} ${esc(L.name)} (${DANGER[clamp(L.unrest,1,3)].toLowerCase()} danger) and works down, one ship at a time.</span></p>`;
+}
+function maintRow(l){
+  if(l.maint)return `<br><span class="okc">Maintenance crew aboard</span> <span class="muted" style="font-size:14px">· ${MAINT_UPKEEP} credits a season · needs repairs a third as often</span> <button class="sm" data-maint="${lk(l)}|0">Pay off</button>`;
+  return `<br><button class="sm" data-maint="${lk(l)}|1" ${H.gold>=MAINT_COST?'':'disabled title="Not enough credits"'}>Hire a maintenance crew · ${MAINT_COST} credits</button> <span class="muted" style="font-size:14px">then ${MAINT_UPKEEP} a season</span>`;
+}
+function maintAllRow(){
+  const n=maintN(),q=maintQueue();
+  const btn=q.length?`<button class="sm" data-maintall="1" style="margin:0" ${H.gold>=MAINT_COST?'':'disabled title="Not enough credits"'}>Crew the fleet · ${MAINT_COST} credits a ship</button>`:'';
+  return `<p style="margin:0 0 8px;display:flex;flex-wrap:wrap;gap:6px 12px;align-items:center"><span><b>Maintenance crews:</b> ${n} of ${H.lands.length} ship${H.lands.length===1?'':'s'} <span class="muted">· upkeep ${maintUpkeep()} credits a season</span></span>${btn}<span class="muted" style="font-size:14px;flex-basis:100%">A crewed ship needs repairs a third as often. Crews you can’t pay walk off, smallest ships first.${q.length?' Crewing the fleet hires for the biggest ships first, as far as your credits go.':''}</span></p>`;
 }
 function investRow(l,i){
   const st=tierStep(l);
-  const LD=ladderOf(l);if(l.build){const to=LD[l.build.to];return `<br><span class="q" style="color:var(--gold);font-weight:600">Refitting as a ${esc(to[0].toLowerCase())}</span> <span class="muted">· ${l.build.left} season${l.build.left>1?'s':''} left</span>${(l.unrest||0)?' <span class="hot">· paused until peaceful</span>':''}`}
+  const LD=ladderOf(l);if(l.build){const to=LD[l.build.to];return `<br><span class="q" style="color:var(--gold);font-weight:600">Refitting as a ${esc(to[0].toLowerCase())}</span> <span class="muted">· ${l.build.left} season${l.build.left>1?'s':''} left</span>${(l.unrest||0)?' <span class="hot">· paused until she is repaired</span>':''}`}
   if(st>=LD.length-1)return `<br><span class="muted">As big as she gets: a cruiser.</span>`;
   const to=LD[st+1],cost=investCost(l),gi=to[1]-LD[st][1],gp=to[2]-LD[st][2];
-  const why=(l.unrest||0)?' title="Only a ship with steady hands can be refitted"':H.gold<cost?' title="Not enough credits"':'';
+  const why=(l.unrest||0)?' title="Only a humming ship can be refitted"':H.gold<cost?' title="Not enough credits"':'';
   return `<br><button class="sm" data-invest="${i}" ${canInvest(l)?'':'disabled'}${why}>Refit as a ${esc(to[0].toLowerCase())} · ${cost} credits · ${to[3]} season${to[3]>1?'s':''}</button> <span class="muted" style="font-size:14px">+${gi} credits a season, +${gp} ${whoAt(l)}</span>`;
 }
 function holdingsPane(){
-  const landLi=l=>`<li><b>${esc(l.name)}</b>, a ${esc(l.tier.toLowerCase())} <span class="muted">· ${l.from==='open space'?'towed in from open space':l.wild?'claimed from '+esc(l.from):'taken from the '+esc(l.from)}${raidOn(l)?' · <span class="hot">under attack</span>':''}</span><br>+${landIncome(l)} credits each season${landIncome(l)<l.income?` <span class="muted">(${l.income} at peace)</span>`:''} · ${l.peasants} ${whoAt(l)} · <span class="${(l.unrest||0)?'hot':'okc'}">${UNREST[l.unrest||0]}</span>${routRow(l,H.lands.indexOf(l))}${investRow(l,H.lands.indexOf(l))}</li>`;
-  const lands=H.lands.length?`<ul class="hl">${H.lands.map(landLi).join('')}</ul>`:'<p class="muted">No ships yet. Dogfights capture them, and Salvage reclaims scuttled hulls.</p>';
+  const landLi=l=>`<li><b>${esc(l.name)}</b>, a ${esc(l.tier.toLowerCase())} <span class="muted">· ${l.from==='open space'?'towed in from open space':l.wild?'claimed from '+esc(l.from):'taken from the '+esc(l.from)}${raidOn(l)?' · <span class="hot">under attack</span>':''}</span><br>+${landIncome(l)} credits each season${landIncome(l)<l.income?` <span class="muted">(${l.income} when humming)</span>`:''} · ${l.peasants} ${whoAt(l)} · <span class="${(l.unrest||0)?'hot':'okc'}">${UNREST[l.unrest||0]}</span>${routRow(l,H.lands.indexOf(l))}${maintRow(l)}${investRow(l,H.lands.indexOf(l))}</li>`;
+  const lands=H.lands.length?maintAllRow()+routAllRow()+shipGroups(landLi):'<p class="muted">No ships yet. Dogfights capture them, and Salvage reclaims scuttled hulls.</p>';
   const caps=prisonerList();
   const ours=H.members.filter(m=>m.captive&&!m.dead);
   const held=ours.length?`<h3>Held by rivals</h3><ul class="hl">${ours.map(m=>`<li><b>${esc(fullName(m))}</b> <span class="muted">· held by the ${esc(m.captive.house)}</span><br><button class="sm" data-payransom="${m.id}" ${H.gold<m.captive.ransom?'disabled':''}>Pay ${m.captive.ransom} credits to free them</button></li>`).join('')}</ul>`:'';
@@ -1998,24 +2145,26 @@ function extraOperation(){
 }
 function launch(opId){
   let i=H.ops.board.findIndex(o=>o.id===opId),def=false;if(i<0){i=(H.ops.defense||[]).findIndex(o=>o.id===opId);def=true}if(i<0||!planTeam.length)return;
-  const op=def?H.ops.defense.splice(i,1)[0]:H.ops.board[i];if(op.rout){const L=H.lands.find(l=>l.name===op.landName);if(L)L.routed=H.cycle}if(!def)H.ops.board=[];planTeam.forEach(id=>{mem(id).onOp=H.cycle});
-  H.ops.underway.push({id:op.id,op,team:planTeam.slice(),stage:0,results:[],done:false});
+  const op=def?H.ops.defense.splice(i,1)[0]:H.ops.board[i];if(op.rout){const L=H.lands.find(l=>lk(l)===op.landName);if(L)L.routed=H.cycle}if(!def)H.ops.board=[];planTeam.forEach(id=>{mem(id).onOp=H.cycle});
+  const ms0={id:op.id,op,team:planTeam.slice(),stage:0,results:[],done:false};H.ops.underway.push(ms0);supportAtStart(ms0);
   planning=null;planTeam=[];render();
 }
 function closeOp(id){
   const i=H.ops.underway.findIndex(x=>x.id===id);if(i<0)return;const ms=H.ops.underway[i];
   const gs=ms.gains.map(g=>g.replace(/\.$/,''));H.log.push({cycle:H.cycle,text:`${ms.op.title}: ${{full:'complete success',partial:'partial success',fail:'failure'}[ms.grade]}. ${gs.join('. ')}${gs.length?'.':''}${ms.results.filter(r=>r.note&&!r.ok).map(r=>' '+r.note).join('')}`});
   if(H.log.length>80)H.log=H.log.slice(-80);
-  H.ops.underway.splice(i,1);render();
+  H.ops.underway.splice(i,1);
+  if(ms.op.kind==='rout'&&routChainOn())nextRout();
+  render();
 }
 function endCycle(){
   if(H.ops.underway.some(x=>!x.done))return;
   H.ops.underway.forEach(ms=>{H.log.push({cycle:H.cycle,text:ms.op.title+': '+ms.gains.join('. ')})});H.ops.underway=[];
-  const inc=cycleIncome();H.gold+=inc;trainingTurn();
+  const inc=cycleIncome();H.gold+=inc;trainingTurn();const maintNews=[];maintTurn((t,tone)=>maintNews.push({t,tone}));
   H.members.forEach(m=>{if(!m.dead&&m.wounds>0)m.wounds-=Math.min(m.wounds,hasBoon(m,'surgeon')?2:1)});
-  H.log.push({cycle:H.cycle,text:`${seasonOf(H.cycle)} ends.${inc?` Ships and contracts pay ${inc} credits.`:''} The wounded mend.`});
+  H.log.push({cycle:H.cycle,text:`${seasonOf(H.cycle)} ends.${inc?` Ships and contracts pay ${inc} credits.`:''} Lost crew members are replaced.`});
   const say=(t,tone)=>H.news.push({t,tone});
-  H.news=PHASE>=3?realmTurn():[];if(PHASE>=3)banditTurn(say);else buildTurn(say);boonTurn(say);sponsorTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Ascent')informantTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Perihelion')agingTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Aphelion')recruitTurn(say);settleTraining();H.news.forEach(n=>H.log.push({cycle:H.cycle,text:n.t,realm:1}));if(H.log.length>80)H.log=H.log.slice(-80);
+  H.news=(PHASE>=3?realmTurn():[]).concat(maintNews);if(PHASE>=3)banditTurn(say);else buildTurn(say);boonTurn(say);sponsorTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Ascent')informantTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Perihelion')agingTurn(say);if(PHASE>=4&&seasonOf(H.cycle+1)==='Aphelion')recruitTurn(say);settleTraining();H.news.forEach(n=>H.log.push({cycle:H.cycle,text:n.t,realm:1}));if(H.log.length>80)H.log=H.log.slice(-80);
   H.cycle++;H.ops.season=H.cycle;ensureMarket();H.ops.board=genBoard();planning=null;planTeam=[];leverage=null;render();
 }
 
@@ -2082,7 +2231,7 @@ function rivalStrike(r,say){
   if(ag==='land'&&Math.random()<.45){const free=H.lands.filter(l=>!raidOn(l));if(free.length){const L=pick(free);H.ops.defense.push(genSiege(r,L));griev(r.name,`They moved on ${L.name}`);say(`The ${r.name} move on ${L.name}. Hold it this season or lose it.`,'warn');return}}
   if(ag==='revenge'||ag==='land'&&Math.random()<.3){const pool=H.members.filter(m=>!m.dead&&!m.captive&&isAdult(m));if(!pool.length)return;const m=pick(pool),roll=1+Math.floor(Math.random()*10);griev(r.name,`They sent a hit squad after ${m.given}`);
     const see=m.st.Proficiency+(fxS(m).taster||0)+gearBonus(m,'Proficiency');if(roll===1||roll!==10&&roll<=see){say(`A hit squad of the ${r.name} comes for ${m.given}, who sees it coming (needed ${see}, rolled ${roll}).`,'warn');return}
-    if(hasBoon(m,'chalice')){m.wounds=Math.min(m.wounds+1,Math.max(0,maxWounds(m)-1));say(`A hit squad of the ${r.name} jumps ${m.given}, but their weapons glitch out. ${m.given} takes 1 wound and lives.`,'warn');return}
+    if(hasBoon(m,'chalice')){m.wounds=Math.min(m.wounds+1,Math.max(0,maxWounds(m)-1));say(`A hit squad of the ${r.name} jumps ${m.given}, but their weapons glitch out. ${m.given} loses 1 crew member and lives.`,'warn');return}
     say(`A hit squad of the ${r.name} jumps ${m.given}, who ${hurt(m,2)}.`,'bad');return}
   const live=H.dip?H.dip.routes.filter(routeActive):[];
   if(ag==='crown'&&live.length){const rt=pick(live);rt.cutUntil=H.cycle+3;griev(r.name,'They smeared you to your clients');say(`The ${r.name} smear your fleet to your clients. Your contract on the lanes of the ${rt.house} is suspended for two seasons.`,'bad');return}
@@ -2221,12 +2370,12 @@ function breakAlliance(n){
   H.log.push({cycle:H.cycle,text:`You end your alliance with the ${n}. They take it badly.`});render();
 }
 
-/* ---------- go-betweens: a crew member of age rolls Proficiency, plus or minus how the other fleet leans; away for the season ---------- */
+/* ---------- ambassadors: a crew member of age rolls Proficiency, plus or minus how the other fleet leans; away for the season ---------- */
 const TENSION_MOD=[1,0,-1,-2,-3,-4];
 function envoyMods(kind,n,against){
   const r=rival(n);if(!r)return {block:'That fleet is gone.'};
   const M=[],add=(l,v)=>{if(v)M.push([l,v])},h=r.hostility,you=playerPower();
-  if(H.dip.heard[n]===H.cycle)return {block:`The ${n} have already heard a go-between this season.`};
+  if(H.dip.heard[n]===H.cycle)return {block:`The ${n} have already heard an ambassador this season.`};
   if(kind==='ally'){
     if(atWar(n))return {block:'You are at war with them. Sue for peace first.'};
     if(alliedWith(n))return {block:'They are already your allies.'};
@@ -2272,15 +2421,15 @@ function envoyPanel(){
   const E=envoyMods(kind,n,against);
   const what={ally:'Success: an alliance. They will not strike at you, they join any war declared on you, and you can call them to arms. Failure: tension rises.',
     call:`Success: the ${n} go to war with the ${against} and fight beside you (+1 to Accuracy rolls in war operations, up to +2 with two allies, and their power joins yours in each season’s clash). Failure: tension rises.`,
-    peace:'Success: the war ends and a truce holds for a year. Failure: the war goes on, and on a roll of 10 your go-between is seized.'}[kind];
+    peace:'Success: the war ends and a truce holds for a year. Failure: the war goes on, and on a roll of 10 your ambassador is seized.'}[kind];
   const mods=E.mods?(E.mods.length?`<ul class="mods">${E.mods.map(([l,v])=>`<li><span>${esc(l)}</span><b class="${v>0?'okc':'hot'}">${v>0?'+':'−'}${Math.abs(v)}</b></li>`).join('')}<li><span><b>Total</b></span><b>${E.sum>0?'+':E.sum<0?'−':''}${Math.abs(E.sum)}</b></li></ul>`:'<p class="muted" style="margin:0">No modifiers either way.</p>'):'';
   const avail=H.members.filter(available).sort((a,b)=>envoyBase(b)-envoyBase(a));
-  const pickHtml=E.block?`<p class="hot" style="margin:0">${esc(E.block)}</p>`:avail.length?`<div class="teampick scroll" role="group" aria-label="Choose the go-between">${avail.map(m=>{const b=envoyBase(m),t=b+E.sum,g=gearBonus(m,'Proficiency','Trade');
+  const pickHtml=E.block?`<p class="hot" style="margin:0">${esc(E.block)}</p>`:avail.length?`<div class="teampick scroll" role="group" aria-label="Choose the ambassador">${avail.map(m=>{const b=envoyBase(m),t=b+E.sum,g=gearBonus(m,'Proficiency','Trade');
       return `<button data-sendenvoy="${m.id}">${portrait(m,48)}<span>${esc(m.given)} <span class="muted">· Proficiency ${m.st.Proficiency}${g?', gear '+(g>0?'+':'−')+Math.abs(g):''}</span></span><b>${clamp(t,1,9)} or under</b></button>`}).join('')}</div>
-      <p class="muted" style="margin:0;font-size:14px">A 1 always succeeds and a 10 always fails. The go-between is away for the season and cannot join an operation.</p>`:'<p class="muted" style="margin:0">No one of age is free to go. Crew on operations this season are away.</p>';
+      <p class="muted" style="margin:0;font-size:14px">A 1 always succeeds and a 10 always fails. The ambassador is away for the season and cannot join an operation.</p>`:'<p class="muted" style="margin:0">No one of age is free to go. Crew on operations this season are away.</p>';
   return `<section class="pane crisis" id="envoyPanel"><div class="boardhead"><h2>${esc(ENVOY_TITLE[kind](n,against))}</h2><button class="sm" data-envoy="">Cancel</button></div>
     <div class="hhead" style="margin-bottom:10px"><i class="kbadge" style="background:${KIND_COLOR[r.kind]}"></i><p style="margin:0;font-size:16px;min-width:0">${esc(what)}</p></div>
-    <div class="two"><div><h3 style="margin-top:0">How the ${esc(n)} lean</h3>${mods}</div><div><h3 style="margin-top:0">Send a go-between</h3>${pickHtml}</div></div></section>`;
+    <div class="two"><div><h3 style="margin-top:0">How the ${esc(n)} lean</h3>${mods}</div><div><h3 style="margin-top:0">Send an ambassador</h3>${pickHtml}</div></div></section>`;
 }
 function sendEnvoy(id){
   if(!envoy)return;const m=mem(id),{kind,house:n,against}=envoy,r=rival(n);if(!m||!available(m)||!r)return;
@@ -2339,15 +2488,15 @@ function treatyPanel(){
   const team=treaty.team.map(mem).filter(m=>m&&available(m));treaty.team=team.map(m=>m.id);
   const assist=Math.min(2,Math.max(0,team.length-1));
   const avail=H.members.filter(available).sort((a,b)=>envoyBase(b)-envoyBase(a));
-  const pickHtml=E.block?`<p class="hot" style="margin:0">${esc(E.block)}</p>`:avail.length?`<div class="teampick scroll" role="group" aria-label="Choose the go-betweens">${avail.map(m=>{const t=envoyBase(m)+E.sum+assist-pen;
+  const pickHtml=E.block?`<p class="hot" style="margin:0">${esc(E.block)}</p>`:avail.length?`<div class="teampick scroll" role="group" aria-label="Choose the ambassadors">${avail.map(m=>{const t=envoyBase(m)+E.sum+assist-pen;
       return `<button data-tpick="${m.id}" aria-pressed="${treaty.team.includes(m.id)}">${portrait(m,48)}<span>${esc(m.given)} <span class="muted">· Proficiency ${m.st.Proficiency}</span></span><b>${clamp(t,1,9)} or under</b></button>`}).join('')}</div>
-      <p class="muted" style="margin:0;font-size:14px">Up to three go-betweens. Each extra one adds +1 to every roll, up to +2. They are away for the season.</p>`:'<p class="muted" style="margin:0">No one of age is free to go this season.</p>';
+      <p class="muted" style="margin:0;font-size:14px">Up to three ambassadors. Each extra one adds +1 to every roll, up to +2. They are away for the season.</p>`:'<p class="muted" style="margin:0">No one of age is free to go this season.</p>';
   const tl=termsList(r,treaty);
   return `<section class="pane crisis" id="treatyPanel"><div class="boardhead"><h2>Peace talks with the ${esc(n)}</h2><button class="sm" data-treaty="">Cancel</button></div>
-    <p style="margin:0 0 10px;font-size:16px">Complete success: ${dz?`the ${esc(n)} are split up and you claim ${esc(CLAIM_NAME[treaty.claim])}. +3 Rep, every other fleet grows warier, and a new fleet moves into the sector. Partial success or failure: the talks break down and the war goes on. On a roll of 10 a go-between is seized.`:`peace${tl.length?' and '+esc(tl.join(', ')):''}. Partial success: peace without terms. Failure: the war goes on, and on a roll of 10 a go-between is seized. Peace brings a truce for a year.`}</p>
+    <p style="margin:0 0 10px;font-size:16px">Complete success: ${dz?`the ${esc(n)} are split up and you claim ${esc(CLAIM_NAME[treaty.claim])}. +3 Rep, every other fleet grows warier, and a new fleet moves into the sector. Partial success or failure: the talks break down and the war goes on. On a roll of 10 an ambassador is seized.`:`peace${tl.length?' and '+esc(tl.join(', ')):''}. Partial success: peace without terms. Failure: the war goes on, and on a roll of 10 an ambassador is seized. Peace brings a truce for a year.`}</p>
     ${rows}${read}
-    <div class="two"><div><h3 style="margin-top:0">How the ${esc(n)} lean</h3>${mods}</div><div><h3 style="margin-top:0">Send go-betweens</h3>${pickHtml}</div></div>
-    <div class="acts" style="margin-top:12px"><button class="main" data-tsend="1" ${E.block||!treaty.team.length?'disabled':''}>Send ${treaty.team.length||'the'} go-between${treaty.team.length===1?'':'s'}</button></div></section>`;
+    <div class="two"><div><h3 style="margin-top:0">How the ${esc(n)} lean</h3>${mods}</div><div><h3 style="margin-top:0">Send ambassadors</h3>${pickHtml}</div></div>
+    <div class="acts" style="margin-top:12px"><button class="main" data-tsend="1" ${E.block||!treaty.team.length?'disabled':''}>Send ${treaty.team.length||'the'} ambassador${treaty.team.length===1?'':'s'}</button></div></section>`;
 }
 function launchTreaty(){
   if(!treaty)return;const n=treaty.house,r=rival(n);if(!r||!atWar(n)||talksOn(n))return;
@@ -2359,7 +2508,7 @@ function launchTreaty(){
   const stages=shuffle(TALK_STAGES).slice(0,diff).concat(['Shake on it']).map(x=>({name:x,stat:'Proficiency'}));
   const op={id:H.ops.nextOp++,type:'Trade',kind:'treaty',diff,target:n,title:`Peace talks with the ${n}`,stages,terms,lean:E.sum};
   team.forEach(m=>{m.onOp=H.cycle});H.dip.heard[n]=H.cycle;
-  H.ops.underway.push({id:op.id,op,team:team.map(m=>m.id),stage:0,results:[],done:false});
+  {const ms0={id:op.id,op,team:team.map(m=>m.id),stage:0,results:[],done:false};H.ops.underway.push(ms0);supportAtStart(ms0)}
   treaty=null;render();const el=document.getElementById('talks');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});
 }
 function applyPeace(n){
@@ -2403,14 +2552,14 @@ function enemyDemand(w,say){
   if(!opts.length)return;
   const terms={};shuffle(opts).slice(0,want).forEach(k=>{
     if(k==='gold')terms.gold=Math.min(H.gold,6+3*r.power+2*m);
-    if(k==='land')terms.land=bestLand().name;});
+    if(k==='land')terms.land=lk(bestLand());});
   H.dip.demands.push({house:w.house,terms,due:H.cycle+1});
   say(`Winning the war, the ${w.house} send their terms for peace. Answer them in The Sector this Perihelion.`,'warn');
 }
 function demandLines(x){
   const t=x.terms,out=[];if(t.dissolve)return [`Break up the fleet of the ${esc(H.house.ship)}. <span class="hot">Your crew ends, and the game with it.</span>`];
   if(t.gold)out.push(`Pay ${t.gold} credits${H.gold<t.gold?` <span class="hot">(you have ${H.gold}; they take all of it)</span>`:''}`);
-  if(t.land){const L=H.lands.find(l=>l.name===t.land)||bestLand();if(L)out.push(`Hand over ${esc(L.name)}, your ${esc(L.tier.toLowerCase())} (+${landIncome(L)} credits a season)`)}
+  if(t.land){const L=H.lands.find(l=>lk(l)===t.land||l.name===t.land)||bestLand();if(L)out.push(`Hand over ${esc(L.name)}, your ${esc(L.tier.toLowerCase())} (+${landIncome(L)} credits a season)`)}
   return out;
 }
 function demandsHtml(){
@@ -2424,7 +2573,7 @@ function acceptDemand(i){
     pendingDissolve=null;H.dip.demands.splice(i,1);H.fallen=true;H.dissolvedBy=n;
     H.log.push({cycle:H.cycle,text:`The crew of the ${H.house.ship} accepts the terms of the ${n} and breaks up.`});render();return}
   if(t.gold){const g=Math.min(H.gold,t.gold);H.gold-=g;done.push(`${g} credits paid`)}
-  if(t.land){const L=H.lands.find(l=>l.name===t.land)||bestLand();if(L){H.lands.splice(H.lands.indexOf(L),1);refundBuild(L,s=>done.push(s));if(r)r.lands++;done.push(`${L.name} handed over`)}}
+  if(t.land){const L=H.lands.find(l=>lk(l)===t.land||l.name===t.land)||bestLand();if(L){H.lands.splice(H.lands.indexOf(L),1);refundBuild(L,s=>done.push(s));if(r)r.lands++;done.push(`${L.name} handed over`)}}
   applyPeace(n);
   H.log.push({cycle:H.cycle,text:`You accept the terms of the ${n}: ${done.join(', ')||'peace'}. A truce holds until ${seasonOf(H.cycle+4)}, year ${yearOf(H.cycle+4)}.`});
   if(mem(sel)&&mem(sel).givenTo){const ru=H.members.find(m=>m.ruler&&!m.dead);if(ru)sel=ru.id}
@@ -2521,7 +2670,7 @@ function warCard(w){
       <dt>Strength</dt><dd>Yours ${playerPower()}${ap?` + allies ${ap}`:''} against their ${r.power} <span class="muted">· plus a d6 each, every season</span></dd>
       <dt>Beside you</dt><dd>${fight.length?fight.map(a=>'the '+esc(a)).join(', '):'<span class="muted">No one yet</span>'}</dd>
       <dt>Record</dt><dd>${w.wins} won · ${w.losses} lost</dd></dl>
-    <div class="acts"><button class="sm" data-treaty="${esc(w.house)}" ${heard(w.house)||talksOn(w.house)?'disabled title="They have heard go-betweens this season"':''}>Negotiate peace · go-betweens</button>${idle.map(a=>`<button class="sm" data-envoy="call|${esc(a)}|${esc(w.house)}" ${heard(a)?'disabled title="They have heard a go-between this season"':''}>Call the ${esc(a)} to arms · go-between</button>`).join('')}</div></article>`;
+    <div class="acts"><button class="sm" data-treaty="${esc(w.house)}" ${heard(w.house)||talksOn(w.house)?'disabled title="They have heard ambassadors this season"':''}>Negotiate peace · ambassadors</button>${idle.map(a=>`<button class="sm" data-envoy="call|${esc(a)}|${esc(w.house)}" ${heard(a)?'disabled title="They have heard an ambassador this season"':''}>Call the ${esc(a)} to arms · ambassador</button>`).join('')}</div></article>`;
 }
 function diploView(){
   const d=H.dip;
@@ -2534,17 +2683,17 @@ function diploView(){
   const allies=d.allies.filter(a=>rival(a.house));
   const allyHtml=allies.length?`<ul class="offices">${allies.map(a=>{const r=rival(a.house),theirWars=H.rivals.filter(o=>relation(a.house,o.name)==='war').map(o=>'the '+o.name);
     return `<li><i class="kbadge" style="background:${KIND_COLOR[r.kind]}"></i><span style="flex:1;min-width:0"><b>The ${esc(a.house)}</b><br><span class="muted" style="font-size:15px">Allied since ${seasonOf(a.since)}, year ${yearOf(a.since)} · power ${'◆'.repeat(r.power)} · ${TENSION[r.hostility]}${theirWars.length?' · <span class="hot">at war with '+esc(theirWars.join(', '))+'</span>':''}</span></span>
-      ${pendingBreak===a.house?`<span class="acts"><button class="sm danger" data-breakyes="${esc(a.house)}">End it · +2 tension</button><button class="sm" data-breakno="1">Keep it</button></span>`:`<button class="sm" data-breakally="${esc(a.house)}">End the alliance</button>`}</li>`}).join('')}</ul>`:'<p class="muted" style="margin:0">No allies yet. Send a go-between from a fleet’s card below to propose an alliance.</p>';
+      ${pendingBreak===a.house?`<span class="acts"><button class="sm danger" data-breakyes="${esc(a.house)}">End it · +2 tension</button><button class="sm" data-breakno="1">Keep it</button></span>`:`<button class="sm" data-breakally="${esc(a.house)}">End the alliance</button>`}</li>`}).join('')}</ul>`:'<p class="muted" style="margin:0">No allies yet. Send an ambassador from a fleet’s card below to propose an alliance.</p>';
   const sum=[d.demands.length?`${d.demands.length} demand${d.demands.length>1?'s':''} for peace`:'',wars.length?`${wars.length} war${wars.length>1?'s':''}`:'',allies.length?`${allies.length} all${allies.length>1?'ies':'y'}`:'',d.calls.length?`${d.calls.length} call${d.calls.length>1?'s':''} to arms`:''].filter(Boolean).join(' · ')||'At peace';
   return `<section class="pane fold dip ${wars.length||d.calls.length||d.demands.length?'crisis':''}"><details data-fold="diplo" ${foldOpen('diplo')?'open':''}><summary><h2>War &amp; alliances</h2><span class="muted">${sum}</span></summary><div class="foldbody">
-    <p class="muted" style="font-size:15px;margin:0 0 10px">Go-betweens are crew of age you send to another fleet. They roll Proficiency, shifted by how that fleet leans toward you, and are away for the season. Each fleet hears one go-between a season. At war, both sides clash every season, power against power, and war operations against your enemies come up at Aphelion and on the Descent. Peace is negotiated: the harsher your terms, the more dangerous the talks. An enemy that is winning sends its terms each Perihelion. Truces hold.</p>
+    <p class="muted" style="font-size:15px;margin:0 0 10px">Ambassadors are crew of age you send to another fleet. They roll Proficiency, shifted by how that fleet leans toward you, and are away for the season. Each fleet hears one ambassador a season. At war, both sides clash every season, power against power, and war operations against your enemies come up at Aphelion and on the Descent. Peace is negotiated: the harsher your terms, the more dangerous the talks. An enemy that is winning sends its terms each Perihelion. Truces hold.</p>
     ${last}${demandsHtml()}${calls}${talksHtml()}<h3>Wars</h3>${warHtml}<h3>Alliances</h3>${allyHtml}</div></details></section>`;
 }
 function dipActs(r){
   const n=r.name,b=[];
-  if(atWar(n))b.push(`<button class="sm" data-treaty="${esc(n)}" ${talksOn(n)?'disabled title="Talks are already underway"':''}>Negotiate peace · go-betweens</button>`);
+  if(atWar(n))b.push(`<button class="sm" data-treaty="${esc(n)}" ${talksOn(n)?'disabled title="Talks are already underway"':''}>Negotiate peace · ambassadors</button>`);
   else{
-    if(!alliedWith(n))b.push(`<button class="sm" data-envoy="ally|${esc(n)}">Propose an alliance · go-between</button>`);
+    if(!alliedWith(n))b.push(`<button class="sm" data-envoy="ally|${esc(n)}">Propose an alliance · ambassador</button>`);
     if(inTruce(n))b.push(`<span class="muted" style="font-size:14px;align-self:center">A truce: no war until ${seasonOf(H.dip.truces.find(t=>t.house===n).until)}</span>`);
     else b.push(`<button class="sm danger" data-warask="${esc(n)}">Go to war</button>`);
     H.rivals.filter(o=>o!==r&&relation(n,o.name)==='war'&&!atWar(o.name)&&!alliedWith(o.name)&&!inTruce(o.name)).forEach(o=>b.push(`<button class="sm" data-joinwar="${esc(n)}|${esc(o.name)}">Join their war on the ${esc(o.name)}</button>`));
@@ -2559,7 +2708,7 @@ function warConfirm(r){
   const lines=[C.length?`<p><b class="okc">Just cause:</b> ${esc(C.join('; '))}.</p>`:'<p><b class="hot">No just cause.</b> −2 Rep, and every other fleet grows warier (+1 tension).</p>'];
   if(oaths.length)lines.push(`<p class="hot">You are bound to them by ${esc(oaths.join(' and '))}. Going to war breaks it: −1 Rep and +1 tension with every other fleet.</p>`);
   if(theirAllies.length)lines.push(`<p>Their allies may join them against you: ${esc(theirAllies.join(', '))}.</p>`);
-  lines.push('<p class="muted">Every season the two of you clash, power against power. War operations against them come up at Aphelion and on the Descent. Peace must be negotiated by go-betweens.</p>');
+  lines.push('<p class="muted">Every season the two of you clash, power against power. War operations against them come up at Aphelion and on the Descent. Peace must be negotiated by ambassadors.</p>');
   return `<div class="confirm col" role="alert"><b>Go to war with the ${esc(n)}?</b>${lines.join('')}<div class="acts"><button class="sm danger" data-wargo="1">Go to war</button><button class="sm" data-warno="1">Hold off</button></div></div>`;
 }
 
@@ -2604,14 +2753,23 @@ function rankingsTable(){
       <span class="rbar" aria-hidden="true"><i style="width:${Math.round(x.score/top*100)}%"></i></span><b class="rscore">${x.score}</b></li>`}).join('')}</ol>`;
 }
 function foldOpen(k){return !(H.ui&&H.ui.folds&&H.ui.folds[k]===false)}
+/* your ships, grouped by class from the biggest down; each group folds, closed until you open it, and remembers how you left it */
+function shipGroups(landLi){
+  const tiers=LADDER.map(x=>x[0]).reverse(),extra=[...new Set(H.lands.map(l=>l.tier))].filter(t=>!tiers.includes(t));
+  return tiers.concat(extra).map(t=>{const ls=H.lands.filter(l=>l.tier===t);if(!ls.length)return '';
+    const k='ships-'+t.toLowerCase().replace(/\W+/g,'-'),hurt=ls.filter(l=>(l.unrest||0)||raidOn(l)).length,inc=ls.reduce((a,l)=>a+landIncome(l),0);
+    const saved=H.ui&&H.ui.folds&&H.ui.folds[k],open=saved===undefined?false:saved;
+    return `<details class="lgrp" data-fold="${k}" ${open?'open':''}><summary>${esc(t)}s <span class="gn">${ls.length} · +${inc} credits a season${hurt?` · <span class="hot">${hurt} need${hurt>1?'':'s'} attention</span>`:''}</span></summary><ul class="hl">${ls.map(landLi).join('')}</ul></details>`}).join('');
+}
 
 function realmView(){
   const news=H.news.length?`<section class="pane fold "><details data-fold="news" ${foldOpen('news')?'open':''}><summary><h2>Comms: ${seasonOf(H.cycle)}, year ${yearOf(H.cycle)}</h2><span class="muted">${H.news.length} message${H.news.length>1?'s':''}</span></summary><div class="foldbody"><ul class="news">${H.news.map(n=>`<li class="${n.tone}">${esc(n.t)}</li>`).join('')}</ul></div></details></section>`:'';
   const houses=H.rivals.map(houseCard).join('');
-  return `${news}${envoyPanel()}${treatyPanel()}${diploView()}${tradeView()}
+  return `${news}
+    <section class="pane fold "><details data-fold="houses" ${foldOpen('houses')?'open':''}><summary><h2>The fleets in detail</h2></summary><div class="foldbody"><div class="hgrid">${houses}</div></div></details></section>
+    ${envoyPanel()}${treatyPanel()}${diploView()}${tradeView()}
     <section class="pane fold"><details data-fold="rank" ${foldOpen('rank')?'open':''}><summary><h2>Power rankings</h2></summary><div class="foldbody">${rankingsTable()}</div></details></section>
-    <section class="pane fold "><details data-fold="relations" ${foldOpen('relations')?'open':''}><summary><h2>Your fleet and the rivals</h2></summary><div class="foldbody"><p class="muted" style="font-size:15px;margin:0 0 10px">Tension rises when you hit a fleet or are caught scheming, and cools with time, favors and truces. A fleet that is not held in check by a truce, a crew pact or an alliance may strike at you between seasons.</p>${relationsOverview()}</div></details></section>
-    <section class="pane fold "><details data-fold="houses" ${foldOpen('houses')?'open':''}><summary><h2>The fleets in detail</h2></summary><div class="foldbody"><div class="hgrid">${houses}</div></div></details></section>`;
+    <section class="pane fold "><details data-fold="relations" ${foldOpen('relations')?'open':''}><summary><h2>Your fleet and the rivals</h2></summary><div class="foldbody"><p class="muted" style="font-size:15px;margin:0 0 10px">Tension rises when you hit a fleet or are caught scheming, and cools with time, favors and truces. A fleet that is not held in check by a truce, a crew pact or an alliance may strike at you between seasons.</p>${relationsOverview()}</div></details></section>`;
 }
 
 /* ---------- the crew: command, aging and retirement. There are no families aboard ---------- */
@@ -2619,7 +2777,7 @@ const living=()=>H.members.filter(m=>!m.dead);
 function ensureBlood(){
   if(!Array.isArray(H.informants))H.informants=[];if(!Array.isArray(H.ties))H.ties=[];if(!H.tiesRolled){H.tiesRolled=true;rollTies()}
   if(H.fallen===undefined)H.fallen=false;H.regency=null;
-  H.members.forEach(m=>{if(m.joined==null)m.joined=1});
+  H.members.forEach(m=>{if(m.joined==null)m.joined=1;if(m.st&&m.wounds>maxWounds(m))m.wounds=maxWounds(m)});
   if(H.firstMate===undefined){const fm=living().find(m=>!m.ruler&&m.title==='First Mate'&&isAdult(m));H.firstMate=fm?fm.id:null}
 }
 /* who takes command if the captain falls: the First Mate, then the longest-serving hands */
@@ -2730,7 +2888,7 @@ function recruitsFor(o){
 }
 function tierPerk(s,o){
   if(!s.tier)return o.treaty?'Owed under treaty: no signing fee':'No signing fee';
-  if(s.tier===1)return 'A signed contract: the crew pact cannot be torn up, and your go-betweens to them get +1';
+  if(s.tier===1)return 'A signed contract: the crew pact cannot be torn up, and your ambassadors to them get +1';
   return 'A signed contract. +1 Rep, and the fleets allied to them warm to you (−1 tension)';
 }
 /* the pact an exchange of hands seals; a signed one (seasoned or veteran) cannot be torn up, and a veteran's warms their allies */
@@ -2882,7 +3040,9 @@ function opTies(ms){
   }
   if(out.length){ms.gains=ms.gains||[];ms.gains.push(...out)}
 }
-finishOp=(f=>function(ms){f(ms);opTies(ms)})(finishOp);
+finishOp=(f=>function(ms){f(ms);opTies(ms);dismissTroops(ms)})(finishOp);
+/* extra troops from ship support leave when the operation ends; the ones lost were the extras first */
+function dismissTroops(ms){ms.team.map(mem).forEach(m=>{if(m&&m.tempCrew){m.wounds=Math.max(0,m.wounds-m.tempCrew);m.tempCrew=0;m.wounds=Math.min(m.wounds,maxWounds(m))}})}
 function tiesHtml(m){
   if(m.dead)return '';
   const T=tiesOf(m).sort((x,y)=>(x.t>y.t?1:-1));
@@ -2905,22 +3065,22 @@ const ARMOR_FX={
   'Ad-Tier Chestpiece':{boon:'sponsor',d:'Sponsors: a free consumable lands in the hold each season'},
   'Branded Chestpiece':{boon:'sponsor',d:'Sponsors: a free consumable lands in the hold each season'},
   'Resupply Armor':{op:'Bounty',d:'+1 to every Bounty roll'},
-  'Medic Armor':{boon:'surgeon',d:'Heals 2 wounds each season instead of 1'},
+  'Medic Armor':{boon:'surgeon',d:'Replaces 2 lost crew members each season instead of 1'},
   'DElETe Armor':{boon:'sponsor',d:'Sponsors: a free consumable lands in the hold each season'},
-  'ODM Exoskeleton':{boon:'mask',d:'Never taken captive; a capture becomes a wound instead'},
+  'ODM Exoskeleton':{boon:'mask',d:'Never taken captive; a capture costs a crew member instead'},
   'Nades R We Armor':{op:'Bounty',boon:'sponsor',d:'Gives no armor. +1 to every Bounty roll, and Sponsors: a free consumable lands in the hold each season'},
   'Rechargeable Laser Wings':{op:'Bounty',d:'+1 to every Bounty roll'},
-  'Divine Disposables Armor':{boon:'surgeon',d:'Heals 2 wounds each season instead of 1'}
+  'Divine Disposables Armor':{boon:'surgeon',d:'Replaces 2 lost crew members each season instead of 1'}
 };
-/* effects: stat (+1 to that stat's rolls), op (+1 to that operation's rolls), minus (−1 to that stat's rolls), wounds, fallGrit (+ to survive going down), boon, taster, grant */
+/* effects: stat (+1 to that stat's rolls), op (+1 to that operation's rolls), minus (−1 to that stat's rolls), wounds (+/− to Endurance rolls), fallGrit (+ to survive going down), boon, taster, grant */
 const HEIRLOOMS={
   'Support Pack':{price:11,op:'Bounty',d:'+1 to every Bounty roll'},
   'Resupply Pack':{price:14,boon:'sponsor',d:'Boon: a free consumable lands in the hold each season'},
-  'Stimulant Synthesizer':{price:16,boon:'surgeon',d:'Boon: heals 2 wounds each season instead of 1'},
+  'Stimulant Synthesizer':{price:16,boon:'surgeon',d:'Boon: replaces 2 lost crew members each season instead of 1'},
   'AI Companion':{price:13,stat:'Cybernetics',d:'+1 to every Cybernetics roll'},
-  'Subdermal Plating':{price:11,wounds:1,d:'Can take 1 more wound before going down'},
+  'Subdermal Plating':{price:11,wounds:1,d:'+1 to Endurance rolls'},
   'Guard Dog Drone':{price:14,stat:'Accuracy',d:'+1 to every Accuracy roll'},
-  'APC Reinforcements':{price:20,boon:'shield',d:'Boon: turns aside the first wound in each operation'},
+  'APC Reinforcements':{price:20,boon:'shield',d:'Boon: saves the first crew member lost in each operation'},
   'Recruitment Drive':{price:11,op:'Trade',d:'+1 to every Trade roll'},
   'Satellite Support':{price:13,stat:'Proficiency',d:'+1 to every Proficiency roll'},
   'Orbital Almanac':{price:16,boon:'support2',d:'Boon: call ship support twice in each operation'},
@@ -2929,85 +3089,84 @@ const HEIRLOOMS={
   'Holographic Reinforcements':{price:12,op:'Salvage',d:'+1 to every Salvage roll'},
   'Expendable Precision Cannon':{price:11,op:'Bounty',d:'+1 to every Bounty roll'},
   'Deployable Laser Sentry':{price:12,op:'Dogfight',d:'+1 to every Dogfight roll'},
-  'ATVs':{price:18,boon:'mask',d:'Boon: never taken captive; a capture becomes a wound instead'},
+  'ATVs':{price:18,boon:'mask',d:'Boon: never taken captive; a capture costs a crew member instead'},
   'Erratic Blinkstone':{price:22,boon:'marble',d:'Boon: once per operation, reroll one failed roll'},
   'Cloaking Technology':{price:12,op:'Salvage',d:'+1 to every Salvage roll'},
   'Precision Uplink':{price:14,boon:'supportBonus',d:'Boon: +1 to the bearer’s ship support rolls'},
   'Open Bar':{price:18,boon:'herald',d:'Boon: each season, the most hostile rival crew’s hostility falls by 1. Drinks are on you'},
   /* unique artifacts: rarer, stronger, and often with a catch */
-  'Steroid Injections':{price:20,unique:1,wounds:2,minus:'Proficiency',d:'Can take 2 more wounds. −1 to Proficiency rolls'},
+  'Steroid Injections':{price:20,unique:1,wounds:2,minus:'Proficiency',d:'+2 to Endurance rolls. −1 to Proficiency rolls'},
   'DEET Manufactory':{price:18,unique:1,boon:'sponsor',d:'Boon: a free consumable lands in the hold each season'},
   'Scavenger Drone':{price:24,unique:1,op:'Salvage',stat:'Cybernetics',d:'+1 to every Salvage roll and every Cybernetics roll'},
-  'Nihilist AI Companion':{price:22,unique:1,stat:'Cybernetics',op:'Bounty',wounds:-1,d:'+1 to every Cybernetics roll and every Bounty roll. Can take 1 fewer wound: it yearns for its own destruction'},
-  'Titanium Skeleton':{price:20,unique:1,wounds:2,minus:'Accuracy',d:'Can take 2 more wounds. −1 to Accuracy rolls from the weight'},
-  'Raptor Drone':{price:24,unique:1,stat:'Accuracy',op:'Bounty',wounds:-1,d:'+1 to every Accuracy roll and every Bounty roll. Can take 1 fewer wound: beware friendly fire'},
-  'Orbital Drop Reinforcements':{price:24,unique:1,boon:'shield',op:'Bounty',d:'Boon: turns aside the first wound in each operation. +1 to every Bounty roll'},
+  'Nihilist AI Companion':{price:22,unique:1,stat:'Cybernetics',op:'Bounty',wounds:-1,d:'+1 to every Cybernetics roll and every Bounty roll. −1 to Endurance rolls: it yearns for its own destruction'},
+  'Titanium Skeleton':{price:20,unique:1,wounds:2,minus:'Accuracy',d:'+2 to Endurance rolls. −1 to Accuracy rolls from the weight'},
+  'Raptor Drone':{price:24,unique:1,stat:'Accuracy',op:'Bounty',wounds:-1,d:'+1 to every Accuracy roll and every Bounty roll. −1 to Endurance rolls: beware friendly fire'},
+  'Orbital Drop Reinforcements':{price:24,unique:1,boon:'shield',op:'Bounty',d:'Boon: saves the first crew member lost in each operation. +1 to every Bounty roll'},
   'Propaganda':{price:20,unique:1,op:'Trade',stat:'Proficiency',minus:'Accuracy',d:'+1 to every Trade roll and every Proficiency roll. −1 to Accuracy rolls from inexperience'},
   'Low-Orbit Sat-link Support':{price:20,unique:1,stat:'Proficiency',op:'Trade',minus:'Cybernetics',d:'+1 to every Proficiency roll and every Trade roll. −1 to Cybernetics rolls from rushed work'},
   'Orbital PHD Thesis':{price:22,unique:1,boon:'support2',stat:'Cybernetics',minus:'Accuracy',d:'Boon: call ship support twice in each operation. +1 to Cybernetics rolls, −1 to Accuracy rolls'},
   'Helldiver Telecomm Unit':{price:22,unique:1,grant:'Orbital Drop Helldivers',op:'Bounty',d:'Calls Orbital Drop Helldivers as ship support, even with the slot empty. +1 to every Bounty roll'},
-  'Tesla Entrenchment':{price:20,unique:1,op:'Dogfight',wounds:1,d:'+1 to every Dogfight roll. Can take 1 more wound'},
+  'Tesla Entrenchment':{price:20,unique:1,op:'Dogfight',wounds:1,d:'+1 to every Dogfight roll. +1 crew member'},
   'Animatronic Reinforcements':{price:20,unique:1,op:'Dogfight',stat:'Cybernetics',d:'+1 to every Dogfight roll and every Cybernetics roll'},
   'Deployable Autocannons':{price:22,unique:1,op:'Bounty',stat:'Accuracy',d:'+1 to every Bounty roll and every Accuracy roll'},
-  'Flamethrower Drone Support':{price:20,unique:1,op:'Bounty',wounds:1,d:'+1 to every Bounty roll. Can take 1 more wound'},
-  'Omni-Directional Maneuvering Gear':{price:18,unique:1,boon:'mask',wounds:-1,d:'Boon: never taken captive; a capture becomes a wound instead. Can take 1 fewer wound'},
+  'Flamethrower Drone Support':{price:20,unique:1,op:'Bounty',wounds:1,d:'+1 to every Bounty roll. +1 crew member'},
+  'Omni-Directional Maneuvering Gear':{price:18,unique:1,boon:'mask',wounds:-1,d:'Boon: never taken captive; a capture costs a crew member instead. −1 to Endurance rolls'},
   'Temporal Blinkstone':{price:26,unique:1,boon:'martyr',d:'Boon: once, when the bearer would die, they slip a moment back in time and live. The stone goes dark'},
-  'Scrambling Technology':{price:20,unique:1,boon:'chalice',d:'Boon: assassins cannot kill the bearer; a successful attempt becomes a single wound'},
+  'Scrambling Technology':{price:20,unique:1,boon:'chalice',d:'Boon: assassins cannot kill the bearer; a successful attempt costs a single crew member'},
   'Hyperlink':{price:24,unique:1,boon:'supportBonus',stat:'Cybernetics',d:'Boon: +1 to the bearer’s ship support rolls. +1 to every Cybernetics roll'},
-  'Free Spirits':{price:18,unique:1,boon:'surgeon',minus:'Endurance',d:'Boon: heals 2 wounds each season instead of 1. −1 to Endurance rolls'}
+  'Free Spirits':{price:18,unique:1,boon:'surgeon',minus:'Endurance',d:'Boon: replaces 2 lost crew members each season instead of 1. −1 to Endurance rolls'}
 };
 const SPECIALTIES={
   'Orbital Stripper Clips':{price:10,op:'Salvage',d:'+1 to every Salvage roll'},
   'Heavenly Host':{price:14,boon:'supportBonus',d:'Boon: +1 to the bearer’s ship support rolls'},
   'Divine Smite':{price:10,op:'Dogfight',d:'+1 to every Dogfight roll'},
   'Orbital Overclock':{price:16,boon:'support2',d:'Boon: call ship support twice in each operation'},
-  'Power Armor':{price:12,wounds:1,d:'Can take 1 more wound before going down'},
+  'Power Armor':{price:12,wounds:1,d:'+1 to Endurance rolls'},
   'Veteran':{price:10,op:'Bounty',d:'+1 to every Bounty roll'},
   'Galactic Uplink':{price:10,op:'Trade',d:'+1 to every Trade roll'},
-  'Unbreakable':{price:14,stat:'Endurance',fallGrit:2,d:'+1 to Endurance rolls, and +2 to survive going down'},
+  'Unbreakable':{price:14,boon:'unbreakable',d:'Boon: when a failed Endurance roll would kill the bearer after losing their last crew member, they live on'},
   'Sponsors':{price:14,boon:'sponsor',d:'Boon: a free consumable lands in the hold each season'},
-  'Flash Clones':{price:20,boon:'shield',d:'Boon: turns aside the first wound in each operation'},
-  'Biofoam Repository':{price:18,boon:'surgeon',d:'Boon: heals 2 wounds each season instead of 1'},
+  'Flash Clones':{price:20,boon:'surgeon',d:'Boon: replaces 2 lost crew members each season instead of 1'},
+  'Biofoam Repository':{price:18,boon:'bioseason',d:'Boon: saves the first crew member lost each season'},
   'High Gravity Training':{price:16,boon:'tutor',d:'Boon: training lands two steps each season instead of one'},
   'Targeting Software':{price:12,stat:'Accuracy',d:'+1 to every Accuracy roll'},
-  'Barracks':{price:8,taster:2,d:'+2 to see an assassin coming'},
-  'Relic Bearer':{price:20,boon:'marble',d:'Boon: once per operation, reroll one failed roll'}
+  'Barracks':{price:8,stature:1,d:'+1 Stature: one more crew member reports to the bearer'},
+  'Relic Bearer':{price:20,boon:'relic',d:'Boon: once per year, reroll one failed roll'}
 };
 /* ship support: once per operation the bearer calls it in with a Cybernetics roll (Phase 2) */
 const SUPPORT={
-  'Orbital Precision Strike':{price:10,fx:'fix',d:'Success turns one failed Accuracy stage into a success'},
+  'Orbital Precision Strike':{price:10,fx:'auto',d:'Success: the current stage of the operation succeeds'},
   'Orbital Gas Strike':{price:10,fx:'bonus',n:1,d:'Success: +1 to every roll left in the operation'},
-  'Orbital Gatling Strike':{price:14,fx:'bonus',n:1,d:'Success: +1 to every roll left in the operation, and +1 more to the next roll'},
+  'Orbital Gatling Strike':{price:14,fx:'next',n:3,stat:'Accuracy',d:'Success: +3 to the next Accuracy roll'},
   'Orbital Railcannon Strike':{price:18,fx:'fix',d:'Success turns one failed stage of any kind into a success'},
-  'Inflatable Reinforcements':{price:10,fx:'shield',d:'Success: the next wound to anyone on the team is turned aside'},
-  'Biofoam Aerosol':{price:10,fx:'heal',d:'Success: everyone on the team heals 1 wound'},
-  'Low-Orbit UAV':{price:10,fx:'bonus',n:1,d:'Success: +1 to every roll left in the operation'},
+  'Inflatable Reinforcements':{price:10,fx:'decoy',d:'Called in on any hit to the team, before anything from the hold: success saves one crew member from being lost'},
+  'Biofoam Aerosol':{price:10,fx:'heal',d:'Called in when a hit would leave a teammate with no crew. Success: 3 lost crew members return across the team, each to whoever has the fewest left'},
+  'Low-Orbit UAV':{price:10,fx:'bonus',n:1,d:'Success: +1 to every Accuracy roll left in the operation'},
   'Disposable Jump Packs':{price:18,fx:'escape',d:'Success: the team gets out. The operation ends where it stands, and no one else is hurt'},
-  'Instant Cement Strike':{price:10,fx:'shield',d:'Success: the next wound to anyone on the team is turned aside'},
+  'Instant Cement Strike':{price:10,fx:'reroll',d:'Success: the latest failed stage is rolled again by the same crew member'},
   'Orbital Napalm Bombardment':{price:14,fx:'bonus',n:2,d:'Success: +2 to every Accuracy roll left in the operation'},
   'Orbital Laser':{price:26,fx:'bonus',n:3,d:'Success: +3 to every Accuracy roll left in the operation. The costliest call in the sector'},
-  'Orbital Drop Shock Troopers':{price:10,fx:'bonus',n:1,d:'Success: +1 to every roll left in the operation'},
+  'Orbital Drop Shock Troopers':{price:10,fx:'troops',frac:1,d:'Called in at the start of an operation. Success: the caller gains extra crew members equal to their Cybernetics for this operation'},
   'Orbital Drop Helldivers':{price:15,fx:'bonus',n:2,d:'Success: +2 to every Accuracy roll left in the operation'},
-  'Holophase Reinforcements':{price:14,fx:'shield',d:'Success: the next wound to anyone on the team is turned aside, and +1 to the next roll'},
-  'Dubious Animatronics':{price:14,fx:'bonus',n:1,d:'Success: +1 to every roll left in the operation'},
+  'Holophase Reinforcements':{price:14,fx:'shield',d:'Success: the next crew member anyone on the team would lose is saved, and +1 to the next roll'},
+  'Dubious Animatronics':{price:14,fx:'troops',frac:.5,d:'Called in at the start of an operation. Success: the caller gains extra crew members equal to half their Cybernetics, rounded down, for this operation'},
   'Orbital Resupply':{price:6,fx:'drop',n:1,d:'Success: a random consumable drops in'},
   'Orbital Payload':{price:7,fx:'drop',n:2,d:'Success: a random consumable drops in; two on a roll of 1'},
-  'Disposable Interposition Drones':{price:10,fx:'shield',d:'Success: the next wound to anyone on the team is turned aside'}
+  'Disposable Interposition Drones':{price:10,fx:'guard',d:'Works while equipped, no roll: the first time the bearer goes down on an operation, the drones are destroyed and the bearer passes their Endurance roll'}
 };
 /* consumables: single use, spent from the hold during an operation (Phase 2) */
 const CONSUMABLES={
   'Frag Grenade':{price:3,d:'+2 to one Accuracy roll'},
   'Disposable Anti-Tank':{price:5,d:'+3 to one Accuracy roll'},
   'Incendiary Grenade':{price:3,d:'+2 to one Accuracy roll'},
-  'Instant Cement Grenade':{price:4,d:'Turns aside one wound'},
+  'Instant Cement Grenade':{price:4,d:'Saves one crew member from being lost'},
   'Tear Gas Grenade':{price:3,d:'+2 to one roll in a Bounty'},
   'Alcohol':{price:2,d:'+2 to one Proficiency roll. Liquid courage'},
-  'Auroch Milk':{price:3,d:'Heals 1 wound'},
   'Aggro Stimulant':{price:4,d:'+3 to one Accuracy roll'},
-  'Biofoam Stimulant':{price:5,d:'Heals 2 wounds'},
+  'Biofoam Stimulant':{price:5,d:'Replaces 2 lost crew members'},
   'Cogni Stimulant':{price:3,d:'+2 to one Cybernetics roll'},
   'Deployable Target Drones':{price:4,d:'+2 to one roll in a Dogfight'},
-  'Pactable Inflatables':{price:4,d:'Turns aside one wound'},
+  'Pactable Inflatables':{price:4,d:'Saves one crew member from being lost'},
   'Pactable Animatronics':{price:4,d:'+2 to one roll in a Dogfight'},
   'Virtual Combat Assistant':{price:4,d:'+2 to one Accuracy roll'},
   'Burnable Blinktech':{price:6,d:'Reroll one failed roll'},
@@ -3023,8 +3182,8 @@ const itemInfo=(slot,n)=>slot==='heirloom'?HEIRLOOMS[n]:slot==='specialty'?SPECI
 const priceOf=(slot,n)=>slot==='weapon'||slot==='armor'?PRICES[slot][n]:(itemInfo(slot,n)||{}).price;
 function itemDesc(slot,n){
   if(slot==='weapon')return '+'+wVal(n)+' to Accuracy rolls · rank '+(WEAPON_RANK[n]||'?')+' in the Armory';
-  if(slot==='armor'){const v=aVal(n),fx=ARMOR_FX[n];return (v?'+'+v+' wound'+(v>1?'s':'')+' before going down':'')+(fx?(v?'. ':'')+fx.d:'')+' · rank '+(ARMOR_RANK[n]||'?')}
-  if(slot==='support')return 'Ship support: once per operation, roll Cybernetics. '+((SUPPORT[n]||{}).d||'');
+  if(slot==='armor'){const v=aVal(n),fx=ARMOR_FX[n];return (v?'+'+v+' to Endurance rolls':'')+(fx?(v?'. ':'')+fx.d:'')+' · rank '+(ARMOR_RANK[n]||'?')}
+  if(slot==='support')return ((SUPPORT[n]||{}).fx==='guard'?'Ship support. ':'Ship support: once per operation, roll Cybernetics. ')+((SUPPORT[n]||{}).d||'');
   if(slot==='consumable')return 'Single use in an operation: '+((CONSUMABLES[n]||{}).d||'');
   const i=itemInfo(slot,n);return i?i.d:'No effect in play';
 }
@@ -3048,6 +3207,7 @@ function sponsorTurn(say){
 /* bonus from gear to a roll of `stat`, during an operation of `type` (or none) */
 function gearBonus(m,stat,type){
   const fx=[fxH(m),fxS(m),fxA(m)];let b=0;
+  if(stat==='Endurance')b+=aVal(m.gear.armor)+(fxH(m).wounds||0)+(fxS(m).wounds||0);
   fx.forEach(f=>{if(f.stat===stat)b++;if(f.minus===stat)b--;if(type&&f.op===type)b++});
   return b;
 }
@@ -3110,6 +3270,7 @@ function itemScore(m,slot,n){
   if(i.op&&ops.includes(i.op))sc+=2;
   if((i.wounds>0||i.fallGrit)&&['Accuracy','Stature','Endurance'].includes(best))sc+=2;
   if(i.taster)sc+=1;
+  if(i.stature&&['Accuracy','Stature','Endurance'].includes(best))sc+=2;
   if(i.boon)sc+=1;
   return sc;
 }
@@ -3138,8 +3299,10 @@ function marketView(){
     return `<li class="ware"><span style="flex:1;min-width:0"><b>${esc(n)}</b>${own?` <span class="muted">· ${own} in the hold</span>`:''}<br><span class="muted">${esc(itemDesc(slot,n))}</span></span><button class="sm" data-buy="${slot}|${esc(n)}" ${H.gold>=p?'':'disabled'}>Buy · ${p} cr</button></li>`};
   const stock=slot=>H.market[slot].length?H.market[slot].map(n=>row(slot,n,priceOf(slot,n))).join(''):'<li class="muted">Sold out until next season.</li>';
   const alive=H.members.filter(m=>!m.dead).sort((a,b)=>b.age-a.age);
-  const arm=H.armory.length?`<ul class="wares">${H.armory.map((it,i)=>`<li class="ware"><span style="flex:1;min-width:0"><span class="tk" style="color:var(--gold)">${ITEM_SLOTS[it.slot]}</span><b>${esc(it.name)}</b><br><span class="muted">${esc(itemDesc(it.slot,it.name))}</span></span>
-      <span class="give">${it.slot==='consumable'?'<span class="muted" style="font-size:14px">Spent during operations (Phase 2)</span>':(()=>{const who=alive.filter(m=>isAdult(m)&&!m.captive&&improves(m,it.slot,it.name));
+  /* consumables stack into one line each, with a count; other gear stays one line per piece */
+  const seenC={},armRows=[];H.armory.forEach((it,i)=>{if(it.slot==='consumable'){if(seenC[it.name])seenC[it.name][2]++;else{seenC[it.name]=[it,i,1];armRows.push(seenC[it.name])}}else armRows.push([it,i,1])});
+  const arm=H.armory.length?`<ul class="wares">${armRows.map(([it,i,cnt])=>`<li class="ware"><span style="flex:1;min-width:0"><span class="tk" style="color:var(--gold)">${ITEM_SLOTS[it.slot]}</span><b>${esc(it.name)}</b>${cnt>1?` <b class="q" style="color:var(--gold)">×${cnt}</b>`:''}<br><span class="muted">${esc(itemDesc(it.slot,it.name))}</span></span>
+      <span class="give">${it.slot==='consumable'?'<span class="muted" style="font-size:14px">Spent automatically on operations</span>':(()=>{const who=alive.filter(m=>isAdult(m)&&!m.captive&&improves(m,it.slot,it.name));
         return who.length?`<select id="give-${i}" aria-label="Give ${esc(it.name)} to">${who.map(m=>`<option value="${m.id}">${esc(m.given)} · ${m.gear[it.slot]&&m.gear[it.slot]!=='None'?'replaces '+esc(m.gear[it.slot]):'empty slot'}</option>`).join('')}</select><button class="sm" data-give="${i}">Equip</button>`:'<span class="muted" style="font-size:14px">No one would be better off with it</span>'})()}<button class="sm" data-sell="${i}">Sell · ${sellPrice(it.slot,it.name)}</button></span></li>`).join('')}</ul>`
     :'<p class="muted">Empty. What you buy lands here, along with anything a crew member takes off.</p>';
   const F=(k,title,sub,body)=>`<section class="pane fold"><details data-fold="${k}" ${foldOpen(k)?'open':''}><summary><h2>${title}</h2>${sub?`<span class="muted">${sub}</span>`:''}</summary><div class="foldbody">${body}</div></details></section>`;
@@ -3235,7 +3398,7 @@ function houseCard(r){
   const ties=tiesWith(r.name),groups=[...new Set(ties.map(x=>x.group))];
   const tieHtml=groups.length?groups.map(gr=>`<dt>${gr}</dt><dd><ul class="ties">${ties.filter(x=>x.group===gr).map(x=>`<li class="${x.tone}">${esc(x.text)}</li>`).join('')}</ul></dd>`).join(''):'';
   const hist=H.log.filter(l=>l.text.includes(r.name)).slice(-3).reverse();
-  return `<article class="hcard" id="house-${esc(r.name)}"><div class="hhead"><i class="kbadge" style="background:${KIND_COLOR[r.kind]}"></i><div style="min-width:0;flex:1"><h3 style="display:flex;gap:8px;align-items:center"><input class="hedit nm" data-hname="${esc(r.name)}" value="${esc(r.name)}" aria-label="Name of the ${esc(r.name)}"></h3>${houseMsg&&houseMsg.key===r.name?`<p class="hmsg" role="alert">${esc(houseMsg.text)}</p>`:''}<p class="muted" style="margin:0;font-size:15px">${esc(kindOf(r).label)} · ${esc(bossOf(r).toLowerCase())} ${esc(r.lord.given)}, ${esc(SPECIES[r.sp].name)} · ${r.lord.age} · flagship ${esc(r.flag||'')}</p><input class="hedit st" data-hseat="${esc(r.name)}" value="Home port: ${esc(r.seat)}" aria-label="Home port of the ${esc(r.name)}"><span class="acts" style="margin-top:4px">${(()=>{const why=rerollBlock(r);return `<button class="sm" data-rerollhouse="${esc(r.name)}" ${why?`disabled title="${esc(why)}"`:'title="Replace this fleet with a new one"'}>Reroll fleet</button>`})()}</span></div></div>
+  return `<article class="hcard" id="house-${esc(r.name)}"><div class="hhead"><i class="kbadge" style="background:${KIND_COLOR[r.kind]}"></i><div style="min-width:0;flex:1"><h3 style="display:flex;gap:8px;align-items:center"><input class="hedit nm" data-hname="${esc(r.name)}" value="${esc(r.name)}" aria-label="Name of the ${esc(r.name)}"></h3>${houseMsg&&houseMsg.key===r.name?`<p class="hmsg" role="alert">${esc(houseMsg.text)}</p>`:''}<p class="muted" style="margin:0;font-size:15px">${esc(kindOf(r).label)} · ${esc(bossOf(r).toLowerCase())} ${esc(r.lord.given)}, ${esc(SPECIES[r.sp].name)} · flagship ${esc(r.flag||'')} · ${rivalHands(r)} crew</p><span class="acts" style="margin-top:4px">${(()=>{const why=rerollBlock(r);return `<button class="sm" data-rerollhouse="${esc(r.name)}" ${why?`disabled title="${esc(why)}"`:'title="Replace this fleet with a new one"'}>Reroll fleet</button>`})()}</span></div></div>
     <div class="stance"><span class="eyebrow" style="color:var(--gold)">${stanceOf(r)}</span>${tensionMeter(r)}</div>
     <p class="threat">${threatLine(r)}</p>
     <dl class="opdl">${tieHtml||'<dt>Ties</dt><dd class="muted">None yet. Trade, truces and leverage all tie fleets together.</dd>'}</dl>
@@ -3259,11 +3422,15 @@ document.addEventListener('click',e=>{
   if(t.dataset.sgclose){if(t.classList.contains('sgback')&&e.target!==t)return;sigilEdit=null;render();return}
   if(t.dataset.rerollhouse){rerollHouse(t.dataset.rerollhouse);render();return}
   if(t.dataset.hsigil!=null){const n=t.dataset.hsigil,r=rival(n);if(r)r.sigil=newSigil();if(H.realm.royal.name===n&&!H.realm.yours)H.realm.royal.sigil=r?r.sigil:newSigil();render();return}
+  if(t.dataset.routall){H.ops.routChain=H.cycle;nextRout();render();const el=document.getElementById('routing');if(el)el.scrollIntoView({behavior:'smooth',block:'start'});return}
+  if(t.dataset.routstop){H.ops.defense=H.ops.defense.filter(d=>!d.rout);H.ops.routChain=null;render();return}
   if(t.dataset.rout!=null){planRout(H.lands[+t.dataset.rout]);render();return}
   if(t.dataset.calloff!=null){callOffRout(H.lands[+t.dataset.calloff]);render();return}
   if(t.dataset.exch){const [d,n]=t.dataset.exch.split('|');exchange(d,+n);render();return}
   if(t.dataset.extraop){extraOperation();render();return}
   if(t.dataset.reroll){if(H.ops.board.length){H.ops.board=genBoard();planning=null;planTeam=[]}render();return}
+  if(t.dataset.maint){const [id,on]=t.dataset.maint.split('|'),L=H.lands.find(l=>lk(l)===id);if(on==='1')hireMaint(L);else dismissMaint(L);render();return}
+  if(t.dataset.maintall){hireMaintAll();render();return}
   if(t.dataset.invest!=null){invest(H.lands[+t.dataset.invest]);render();return}
   if(t.dataset.train){buyTraining(mem(sel),t.dataset.train);render();return}
   if(t.dataset.untrain){cancelTraining(mem(sel),t.dataset.untrain);render();return}
