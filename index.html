@@ -244,8 +244,10 @@ function dieLabel(idx){if(idx<0)return idx<-1?'1':'d2';if(idx<=4)return DIE_NAME
 var RANKS=['Sergeant','Lieutenant'];
 var FIRST=['Ines','Wren','Odalys','Priya','Lucia','Greta','Bao','Ismene','Noor','Thea','Sunniva','Dalia','Mina','Bridget','Zora','Marisol','Ingrid','Adaeze','Katya','Yara','Petra','Saoirse','Aiko','Rosalind','Tamsin','Leila','Vesna','Imani','Clio','Halina'];
 var LAST=['Okafor','Lindqvist','Petrov','Reyes','Novak','Abara','Hollis','Sato','Duarte','Brandt','Ferreira','Kowalczyk','Mbeki','Ashdown','Varga','Moreau','Tanaka','Quill','Osei','Halloran','Pruitt','Zeller','Ibarra','Voss','Nakamura','Bellweather','Sorensen','Adeyemi','Crane','Dunmore'];
+var FIRST_M=['Marek','Tobias','Halvard','Cormac','Dmitri','Anselm','Yusuf','Rafferty','Casimir','Emeka','Osric','Ferenc','Joaquin','Tavish','Hugo','Bastian','Kenji','Idris','Lev','Mateo','Ronan','Silas','Teodor','Viktor','Wade','Ezra','Callum','Desmond','Nikolai','Arlo'];
 var CALLS=['Paperwork','Spare','Biscuit','Lucky Nine','Footnote','Regulation','Cheerful','Overtime','Mostly','Dents','Pending','Bulk Order','Sundry','Optimist','Second Opinion','Rounding Error','Deductible','Fine Print','Clearance','Nametag','Backup','Surplus','Line Item','Standby','Volunteer','Acceptable Loss','Placeholder','Hopeful','Eh','Warranty','Receipt','Shrinkage','Memo','Filler','Provisional'];
 var PORTRAITS=['Fathletic','Fathletic_mechanic','Fathletic_officer','Fathletic_outlaw','Fathletic_pilot','Fathletic_soldier','Fathletic_spy','Fgiant_mechanic','Fgiant_officer','Fgiant_soldier1','Fgiant_soldier2','Fhimedere_cybernetic','Fhimedere_officer','Fhimedere_pilot','Fhimedere_soldier','Fkuudere','Fkuudere_mechanic','Fkuudere_officer','Fkuudere_soldier','Fkuudere_spy','Floner_cybernetic','Floner_officer1','Floner_officer2','Floner_outlaw','Floner_pilot','Floner_soldier','Freckless_cybernetic','Freckless_mechanic','Freckless_outlaw','Freckless_pilot','Freckless_soldier','Freckless_spy','Fshy','Fshy_cybernetic','Fshy_officer','Fshy_pilot','Fshy_soldier','Fstylist_cybernetic','Fstylist_mechanic','Fstylist_officer1','Fstylist_officer2','Fstylist_outlaw','Fstylist_soldier','Fstylist_spy','Ftease_cybernetic','Ftease_mechanic','Ftease_officer1','Ftease_officer2','Ftease_outlaw','Ftease_pilot','Ftease_soldier','Ftease_spy','Ftsundere_mechanic','Ftsundere_officer','Ftsundere_soldier','Fyandere','Fyandere_outlaw','Fyandere_spy'];
+var PORTRAITS_M=['Mathletic_cybernetic','Mathletic_mechanic','Mathletic_officer','Mathletic_outlaw','Mathletic_pilot','Mathletic_soldier','Mathletic_spy','Mgiant_mechanic','Mgiant_outlaw','Mgiant_soldier','Mloner_cybernetic','Mloner_mechanic','Mloner_officer','Mloner_outlaw','Mloner_pilot','Mloner_soldier','Mloner_spy','Mreckless_cybernetic','Mreckless_mechanic','Mreckless_officer','Mreckless_outlaw','Mreckless_pilot','Mreckless_soldier','Mreckless_spy','Mshy_cybernetic','Mshy_mechanic','Mshy_officer','Mshy_outlaw','Mshy_pilot','Mshy_soldier','Mshy_spy','Mstylist_cybernetic','Mstylist_mechanic','Mstylist_officer','Mstylist_outlaw','Mstylist_pilot','Mstylist_soldier','Mstylist_spy','Mtease_cybernetic','Mtease_mechanic','Mtease_officer','Mtease_outlaw','Mtease_pilot','Mtease_soldier','Mtease_spy','Mtsundere_mechanic','Mtsundere_officer','Mtsundere_pilot','Myandere_officer','Myandere_outlaw'];
 var SHIPNAMES=['Acceptable Margin','Quarterly Target','Unpaid Invoice','Strongly Worded Memo','Budget Surplus','Revised Estimate','Mandatory Optimism','Second Notice'];
 var SCARS=['a burn that runs from wrist to elbow','three parallel claw marks across the ribs','a patch of acid scarring on one cheek','a shrapnel line across the scalp','a limp that improves in cold weather','a web of scar tissue across the shoulder','an eyebrow that will not grow back','a neat surgical seam the medic refuses to discuss','a ringing in one ear that hums a tune nobody recognizes','a habit of counting exits','a laugh that arrives a second too late','a refusal to sleep with the lights off'];
 
@@ -498,8 +500,8 @@ function hasUp(id){return !!(G&&G.campaign&&G.campaign.ship.up[id]);}
 
 /* ================= squads ================= */
 function usedPf(){var u={};G.squads.forEach(function(s){u[s.pf]=1;});(G.offers||[]).forEach(function(o){u[o.s.pf]=1;});return u;}
-function pickPortrait(officer){
-  var u=usedPf(),pool=PORTRAITS.filter(function(p){return officer?/_officer/.test(p):!/_officer/.test(p);});
+function pickPortrait(officer,sex){
+  var u=usedPf(),pool=(sex==='m'?PORTRAITS_M:PORTRAITS).filter(function(p){return officer?/_officer/.test(p):!/_officer/.test(p);});
   var free=pool.filter(function(p){return !u[p];});return pick(free.length?free:pool);
 }
 function uniqueCall(){
@@ -509,11 +511,12 @@ function uniqueCall(){
 function baseTier(){return G.campaign&&G.campaign.stage>=3?'penal':'conscript';}
 function newSquad(tier){
   var T=TIERS[tier||baseTier()];
-  var s={id:G.nextId++,first:pick(FIRST),last:pick(LAST),call:uniqueCall(),pf:null,tier:T.n,
+  var sex=Math.random()<.5?'m':'f';
+  var s={id:G.nextId++,sex:sex,first:pick(sex==='m'?FIRST_M:FIRST),last:pick(LAST),call:uniqueCall(),pf:null,tier:T.n,
     cs:Math.max(-1,T.cs+(hasUp('armory')?1:0)),arm:T.arm,po:T.po,fr:0,tr:5,troops:5,
     gear:{weapon:{k:'weapon',i:pick(ISSUE)},armor:null,artifact:null,orbital:null,specialty:null},
     edge:null,edgeUsed:false,scars:[],out:0,missions:0,kills:0,lost:false,dt:false};
-  s.pf=pickPortrait(false);
+  s.pf=pickPortrait(false,sex);
   return s;
 }
 function sqName(s){return s.call;}
